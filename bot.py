@@ -31,6 +31,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text, reply_markup=get_main_menu(), parse_mode='Markdown')
 
+# --- دالة حفظ السؤال (تم تعديلها لتعمل مع الأزرار والنصوص) ---
+async def save_question(update_or_query, context, alt_ans):
+    cat_id = context.user_data.get('cur_cat')
+    # تحديد هوية المستخدم سواء ضغط زر أو أرسل نص
+    user_id = update_or_query.from_user.id if hasattr(update_or_query, 'from_user') else update_or_query.effective_user.id
+    
+    try:
+        supabase.table("questions").insert({
+            "category_id": int(cat_id), 
+            "question_content": context.user_data['q_txt'], 
+            "correct_answer": context.user_data['a1'], 
+            "alt_answer": alt_ans,
+            "created_by": user_id
+        }).execute()
+        
+        context.user_data['state'] = None
+        text = "🎉 تم حفظ السؤال بنجاح!"
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 عودة للقسم", callback_data=f"manage_cat_{cat_id}")]])
+        
+        # إذا كان الاستدعاء من زر (CallbackQuery)
+        if hasattr(update_or_query, 'edit_message_text'):
+            await update_or_query.edit_message_text(text, reply_markup=reply_markup)
+        else:
+            await update_or_query.effective_chat.send_message(text, reply_markup=reply_markup)
+            
+    except Exception as e:
+        logging.error(f"Save Error: {e}")
+
 # 2. معالج الأزرار المطور
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -39,7 +67,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     try:
-        # --- [أولاً] أوامر الحذف والتعديل (أولوية) ---
+        if data == "ask_alt_no":
+            await save_question(query, context, None)
+            return
+        elif data == "ask_alt_yes":
+            context.user_data['state'] = 'WAIT_A2'
+            await query.edit_message_text("📝 ارسل الإجابة البديلة:")
+            return
+
+        # --- أوامر الحذف والتعديل ---
         if data.startswith("execute_del_"):
             cat_id = data.split("_")[2]
             supabase.table("categories").delete().eq("id", cat_id).execute()
@@ -58,7 +94,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("📝 ارسل الاسم الجديد للقسم:")
             return
 
-        # --- [ثانياً] أوامر الإدارة والعرض ---
+        # --- الإدارة والعرض ---
         if data == "gui_view_cats":
             res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
             keyboard = [[InlineKeyboardButton(f"📁 {c['name']}", callback_data=f"manage_cat_{c['id']}")] for c in res.data]
@@ -87,7 +123,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-        # --- [ثالثاً] نظام المسابقات المتطور (نقاط وتصحيح تلقائي) ---
+        # --- نظام المسابقات ---
         elif data == "setup_quiz":
             res = supabase.table("categories").select("*").execute()
             if not res.data:
@@ -103,39 +139,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not q_res.data:
                 await query.edit_message_text("❌ القسم فارغ!", reply_markup=get_main_menu())
                 return
-            
             await query.edit_message_text(f"🚀 انطلقت المسابقة! استعدوا...")
-            
-            # تهيئة الجلسة
             context.bot_data['quiz_active'] = True
             context.bot_data['scores'] = {}
-            
             for i, q in enumerate(q_res.data, 1):
-                # تخزين الإجابات الحالية في الذاكرة للمقارنة
                 context.bot_data['current_answer'] = str(q['correct_answer']).strip().lower()
                 context.bot_data['alt_answer'] = str(q.get('alt_answer')).strip().lower() if q.get('alt_answer') else None
                 context.bot_data['answered'] = False
-                
                 txt = f"❓ **سؤال رقم {i}:**\n\n{q['question_content']}\n\n⏱️ أمامكم 15 ثانية للإجابة!"
                 await context.bot.send_message(chat_id=query.message.chat_id, text=txt, parse_mode='Markdown')
-                
-                await asyncio.sleep(15) # انتظار الإجابة
-                
+                await asyncio.sleep(15)
                 if not context.bot_data['answered']:
                     await context.bot.send_message(chat_id=query.message.chat_id, text=f"⏰ انتهى الوقت! الإجابة كانت: {q['correct_answer']}")
-
-            # عرض لوحة المتصدرين النهائية
+            
+            # عرض النتائج
             scores = context.bot_data.get('scores', {})
             sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-            res_txt = "🏁 **انتهت المسابقة! النتائج النهائية:**\n\n"
-            for name, score in sorted_scores:
-                res_txt += f"👤 {name}: {score} نقطة\n"
-            if not sorted_scores: res_txt += "لم يشارك أحد في هذه الجولة. 🐈"
-            
-            await context.bot.send_message(chat_id=query.message.chat_id, text=res_txt, parse_mode='Markdown')
+            res_txt = "🏁 **انتهت المسابقة! النتائج:**\n\n"
+            for name, score in sorted_scores: res_txt += f"👤 {name}: {score} نقطة\n"
+            await context.bot.send_message(chat_id=query.message.chat_id, text=res_txt if sorted_scores else "لا يوجد فائزين.", parse_mode='Markdown')
             context.bot_data['quiz_active'] = False
 
-        # --- [رابعاً] بقية الأوامر ---
         elif data.startswith("add_q_"):
             cat_id = data.split("_")[2]
             context.user_data.update({'state': 'WAIT_Q', 'cur_cat': cat_id})
@@ -156,30 +180,20 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif data == "back_to_main":
             await query.edit_message_text("⚙️ الرئيسية:", reply_markup=get_main_menu())
 
-        elif data == "ask_alt_yes":
-            context.user_data['state'] = 'WAIT_A2'
-            await query.edit_message_text("📝 ارسل الإجابة البديلة:")
-
-        elif data == "ask_alt_no":
-            await save_question(update, context, None)
-
     except Exception as e:
         logging.error(f"Error: {e}")
 
-# 3. معالج النصوص (إدارة المدخلات وتلقي الإجابات)
+# 3. معالج النصوص
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name
     state = context.user_data.get('state')
 
-    # --- أولاً: التحقق من إجابات المسابقة (إذا كانت جارية) ---
+    # أولاً: المسابقة
     if context.bot_data.get('quiz_active') and not context.bot_data.get('answered'):
-        user_ans = text.lower()
-        correct = context.bot_data.get('current_answer')
-        alt = context.bot_data.get('alt_answer')
-        
-        if user_ans == correct or (alt and user_ans == alt):
+        ans = text.lower()
+        if ans == context.bot_data.get('current_answer') or (context.bot_data.get('alt_answer') and ans == context.bot_data.get('alt_answer')):
             context.bot_data['answered'] = True
             scores = context.bot_data.get('scores', {})
             scores[user_name] = scores.get(user_name, 0) + 1
@@ -187,25 +201,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"✅ كفو يا {user_name}! إجابة صحيحة (+1)")
             return
 
-    # حذف رسالة المستخدم بعد المعالجة (للحفاظ على نظافة الشات)
-    try: await update.message.delete()
-    except: pass
+    # حذف رسائل الإدخال فقط (تحكم)
+    if state:
+        try: await update.message.delete()
+        except: pass
 
     if text == "تحكم":
         await update.message.reply_text("⚙️ لوحة التحكم:", reply_markup=get_main_menu())
         return
 
-    # --- إدارة حالات الإدخال ---
+    # إدارة الحالات
     if state == 'WAIT_CAT_NAME':
         supabase.table("categories").insert({"name": text, "created_by": user_id}).execute()
         context.user_data['state'] = None
-        await update.message.reply_text(f"✅ تم إضافة القسم '{text}'!")
+        await update.message.reply_text(f"✅ تم إضافة القسم '{text}'!", reply_markup=get_main_menu())
 
     elif state == 'WAIT_NEW_NAME':
         cat_id = context.user_data['cur_cat']
         supabase.table("categories").update({"name": text}).eq("id", cat_id).execute()
         context.user_data['state'] = None
-        await update.message.reply_text(f"✅ تم تغيير الاسم لـ {text}!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 عودة", callback_data=f"manage_cat_{cat_id}")]]))
+        await update.message.reply_text(f"✅ تم تغيير الاسم لـ {text}!")
 
     elif state == 'WAIT_Q':
         context.user_data.update({'q_txt': text, 'state': 'WAIT_A1'})
@@ -219,19 +234,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif state == 'WAIT_A2':
         await save_question(update, context, text)
 
-async def save_question(update, context, alt_ans):
-    cat_id = context.user_data['cur_cat']
-    user_id = update.effective_user.id
-    supabase.table("questions").insert({
-        "category_id": int(cat_id), 
-        "question_content": context.user_data['q_txt'], 
-        "correct_answer": context.user_data['a1'], 
-        "alt_answer": alt_ans,
-        "created_by": user_id
-    }).execute()
-    context.user_data['state'] = None
-    await update.effective_chat.send_message("🎉 تم حفظ السؤال بنجاح!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 عودة للقسم", callback_data=f"manage_cat_{cat_id}")]]))
-
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -240,4 +242,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__": main()
-            
+        
