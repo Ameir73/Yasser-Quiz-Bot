@@ -121,15 +121,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-        # --- نظام المسابقات ---
+        # --- نظام تهيئة المسابقات المطور ---
         elif data == "setup_quiz":
-            res = supabase.table("categories").select("*").execute()
-            if not res.data:
-                await query.edit_message_text("⚠️ لا توجد أقسام!", reply_markup=get_main_menu())
-                return
-            keyboard = [[InlineKeyboardButton(f"🏁 ابدأ: {c['name']}", callback_data=f"run_quiz_{c['id']}")] for c in res.data]
-            keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main")])
-            await query.edit_message_text("🏆 اختر القسم لإطلاق المسابقة:", reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard = [
+                [InlineKeyboardButton("أقسام الأعضاء", callback_data="quiz_members"), InlineKeyboardButton("أقسام البوت", callback_data="quiz_bot")],
+                [InlineKeyboardButton("الأقسام المختارة", callback_data="quiz_selected"), InlineKeyboardButton("أقسامك الخاصة", callback_data="gui_view_cats")],
+                [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main")]
+            ]
+            await query.edit_message_text(
+                "🎉 أهلاً بك! قم بتهيئة المسابقة عن طريق اختيار أحد الخيارات التالية:",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
 
         elif data.startswith("run_quiz_"):
             cat_id = data.split("_")[2]
@@ -207,21 +209,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- إدارة حالات الإدخال ---
     if state == 'WAIT_CAT_NAME':
-        # 1. إدراج القسم الجديد
         supabase.table("categories").insert({"name": text, "created_by": user_id}).execute()
         context.user_data['state'] = None
         
-        # 2. جلب القائمة المحدثة لأقسام هذا المستخدم فوراً
+        # جلب القائمة المحدثة فوراً
         res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
-        
-        # 3. بناء قائمة الأزرار للأقسام الخاصة
         keyboard = [[InlineKeyboardButton(f"📁 {c['name']}", callback_data=f"manage_cat_{c['id']}")] for c in res.data]
         keyboard.append([InlineKeyboardButton("➕ إضافة قسم جديد", callback_data="gui_add_cat")])
         if user_id == OWNER_ID:
             keyboard.append([InlineKeyboardButton("👁 استعراض أقسام الجميع", callback_data="admin_view_all")])
         keyboard.append([InlineKeyboardButton("🔙 للرجوع", callback_data="back_to_main")])
         
-        # 4. الانتقال المباشر لقائمة الأقسام بدلاً من الرئيسية
         await update.message.reply_text(
             f"✅ تم إضافة القسم '{text}' بنجاح!\n\n📂 إليك قائمة أقسامك المحدثة:", 
             reply_markup=InlineKeyboardMarkup(keyboard)
@@ -253,4 +251,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__": main()
-    
+            
