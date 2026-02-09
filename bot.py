@@ -31,10 +31,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text, reply_markup=get_main_menu(), parse_mode='Markdown')
 
-# --- دالة حفظ السؤال (تم تعديلها لتعمل مع الأزرار والنصوص) ---
+# --- دالة حفظ السؤال ---
 async def save_question(update_or_query, context, alt_ans):
     cat_id = context.user_data.get('cur_cat')
-    # تحديد هوية المستخدم سواء ضغط زر أو أرسل نص
     user_id = update_or_query.from_user.id if hasattr(update_or_query, 'from_user') else update_or_query.effective_user.id
     
     try:
@@ -50,7 +49,6 @@ async def save_question(update_or_query, context, alt_ans):
         text = "🎉 تم حفظ السؤال بنجاح!"
         reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 عودة للقسم", callback_data=f"manage_cat_{cat_id}")]])
         
-        # إذا كان الاستدعاء من زر (CallbackQuery)
         if hasattr(update_or_query, 'edit_message_text'):
             await update_or_query.edit_message_text(text, reply_markup=reply_markup)
         else:
@@ -152,7 +150,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if not context.bot_data['answered']:
                     await context.bot.send_message(chat_id=query.message.chat_id, text=f"⏰ انتهى الوقت! الإجابة كانت: {q['correct_answer']}")
             
-            # عرض النتائج
             scores = context.bot_data.get('scores', {})
             sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
             res_txt = "🏁 **انتهت المسابقة! النتائج:**\n\n"
@@ -190,7 +187,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = update.effective_user.first_name
     state = context.user_data.get('state')
 
-    # أولاً: المسابقة
     if context.bot_data.get('quiz_active') and not context.bot_data.get('answered'):
         ans = text.lower()
         if ans == context.bot_data.get('current_answer') or (context.bot_data.get('alt_answer') and ans == context.bot_data.get('alt_answer')):
@@ -201,7 +197,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"✅ كفو يا {user_name}! إجابة صحيحة (+1)")
             return
 
-    # حذف رسائل الإدخال فقط (تحكم)
     if state:
         try: await update.message.delete()
         except: pass
@@ -210,11 +205,27 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚙️ لوحة التحكم:", reply_markup=get_main_menu())
         return
 
-    # إدارة الحالات
+    # --- إدارة حالات الإدخال ---
     if state == 'WAIT_CAT_NAME':
+        # 1. إدراج القسم الجديد
         supabase.table("categories").insert({"name": text, "created_by": user_id}).execute()
         context.user_data['state'] = None
-        await update.message.reply_text(f"✅ تم إضافة القسم '{text}'!", reply_markup=get_main_menu())
+        
+        # 2. جلب القائمة المحدثة لأقسام هذا المستخدم فوراً
+        res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
+        
+        # 3. بناء قائمة الأزرار للأقسام الخاصة
+        keyboard = [[InlineKeyboardButton(f"📁 {c['name']}", callback_data=f"manage_cat_{c['id']}")] for c in res.data]
+        keyboard.append([InlineKeyboardButton("➕ إضافة قسم جديد", callback_data="gui_add_cat")])
+        if user_id == OWNER_ID:
+            keyboard.append([InlineKeyboardButton("👁 استعراض أقسام الجميع", callback_data="admin_view_all")])
+        keyboard.append([InlineKeyboardButton("🔙 للرجوع", callback_data="back_to_main")])
+        
+        # 4. الانتقال المباشر لقائمة الأقسام بدلاً من الرئيسية
+        await update.message.reply_text(
+            f"✅ تم إضافة القسم '{text}' بنجاح!\n\n📂 إليك قائمة أقسامك المحدثة:", 
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
     elif state == 'WAIT_NEW_NAME':
         cat_id = context.user_data['cur_cat']
@@ -242,4 +253,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__": main()
-        
+    
