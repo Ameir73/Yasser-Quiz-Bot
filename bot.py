@@ -18,21 +18,11 @@ def get_main_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def get_settings_keyboard(s):
-    keyboard = [
-        [InlineKeyboardButton(f"📊 الأسئلة: {s['num_q']}", callback_data="none")],
-        [InlineKeyboardButton(f"✅ {n}" if s['num_q'] == n else str(n), callback_data=f"set_n_{n}") for n in [20, 25, 30, 35, 40, 45]],
-        [InlineKeyboardButton("🚀 السرعة" if s['mode'] == 'السرعة' else "🕒 الوقت", callback_data="toggle_mode")],
-        [InlineKeyboardButton("حفظ المسابقة ✅", callback_data="save_quiz_final")],
-        [InlineKeyboardButton("🔙 رجوع", callback_data="back_main")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
 # --- رسالة الترحيب ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     my_telegram = "https://t.me/Ya_79k"
     text = f"👋 أهلاً بك يا {update.effective_user.first_name}\nارسل كلمة (**تحكم**) للبدء.\n\n👑 المطور: [ياسر]({my_telegram})"
-    await update.message.reply_text(text, reply_markup=get_main_menu(), parse_mode='Markdown')
+    await update.message.reply_text(text, reply_markup=get_main_menu(), parse_mode='Markdown', disable_web_page_preview=True)
 
 # --- معالج الأزرار ---
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -40,16 +30,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data, user_id = query.data, update.effective_user.id
     
-    if 'setup' not in context.user_data:
-        context.user_data['setup'] = {'num_q': 20, 'mode': 'الوقت'}
-
-    # 1. نظام إدارة الأقسام (إضافة مخصصة)
+    # إدارة الأقسام
     if data == "gui_view_cats":
         res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
         keyboard = [[InlineKeyboardButton(f"📁 {c['name']}", callback_data=f"mng_{c['id']}")] for c in res.data]
         keyboard.append([InlineKeyboardButton("➕ إضافة قسم جديد", callback_data="add_new_cat")])
         keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="back_main")])
-        await query.edit_message_text("📂 أقسامك:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text("📂 أقسامك الحالية:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "add_new_cat":
         context.user_data['state'] = 'WAIT_CAT_NAME'
@@ -62,9 +49,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("➕ إضافة سؤال", callback_data=f"add_q_{cat_id}"), InlineKeyboardButton("🗑️ حذف القسم", callback_data=f"del_{cat_id}")],
             [InlineKeyboardButton("🔙 رجوع", callback_data="gui_view_cats")]
         ]
-        await query.edit_message_text(f"📍 إدارة القسم الحالي:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(f"📍 إدارة القسم:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # 2. نظام إضافة سؤال (مصلح)
+    # إضافة سؤال
     elif data.startswith("add_q_"):
         context.user_data['state'] = 'WAIT_Q_TXT'
         await query.edit_message_text("📝 ارسل نص السؤال:")
@@ -76,21 +63,21 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['state'] = 'WAIT_ALT_ANS'
         await query.edit_message_text("📝 ارسل الإجابة البديلة:")
 
-    # 3. نظام حذف القسم (نعم/لا)
+    # حذف القسم
     elif data.startswith("del_"):
         cid = data.split("_")[1]
-        keyboard = [[InlineKeyboardButton("✅ نعم", callback_data=f"confirm_del_{cid}"), InlineKeyboardButton("❌ لا", callback_data=f"mng_{cid}")]]
-        await query.edit_message_text("⚠️ هل أنت متأكد من الحذف؟", reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("✅ نعم، احذف", callback_data=f"confirm_del_{cid}"), InlineKeyboardButton("❌ لا، تراجع", callback_data=f"mng_{cid}")]]
+        await query.edit_message_text("⚠️ هل أنت متأكد من حذف القسم؟", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("confirm_del_"):
         cid = data.split("_")[2]
         supabase.table("categories").delete().eq("id", cid).execute()
-        await query.edit_message_text("✅ تم الحذف.", reply_markup=get_main_menu())
+        await query.edit_message_text("✅ تم الحذف بنجاح.", reply_markup=get_main_menu())
 
     elif data == "back_main":
         await query.edit_message_text("⚙️ الرئيسية:", reply_markup=get_main_menu())
 
-# --- دالة الحفظ في القاعدة ---
+# --- حفظ السؤال ---
 async def save_q_to_db(update_or_query, context, alt):
     d = context.user_data
     supabase.table("questions").insert({
@@ -98,11 +85,11 @@ async def save_q_to_db(update_or_query, context, alt):
         "correct_answer": d['ans'], "alt_answer": alt, "created_by": update_or_query.from_user.id
     }).execute()
     d['state'] = None
-    text = "✅ تم حفظ السؤال بنجاح!"
+    text = "🎉 تم حفظ السؤال بنجاح!"
     if hasattr(update_or_query, 'edit_message_text'): await update_or_query.edit_message_text(text, reply_markup=get_main_menu())
     else: await update_or_query.reply_text(text, reply_markup=get_main_menu())
 
-# --- معالج النصوص (الحالات) ---
+# --- معالج النصوص ---
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text, state, uid = update.message.text.strip(), context.user_data.get('state'), update.effective_user.id
 
@@ -135,4 +122,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__": main()
-        
+    
