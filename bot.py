@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import random
+import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from supabase import create_client, Client
@@ -44,9 +45,9 @@ def get_settings_keyboard(settings):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def get_question_interface(q_num, total, cat, mode, q_id, owner, text, q_time):
+def get_question_interface(q_num, total, cat, mode, owner, text, q_time):
     return (
-        f"🎓 **الـمنـظـم:** {owner} ☁️\n"
+        f"🎓 **الـمنـظـم:** {owner} ☁️☁️\n"
         f"┏━━━━━━━━━━━━━━┓\n"
         f"  📌 **سؤال:** « {q_num} » من « {total} » 📍\n"
         f"  📁 **قسم:** {cat} 📂\n"
@@ -56,7 +57,7 @@ def get_question_interface(q_num, total, cat, mode, q_id, owner, text, q_time):
         f"❓ **السؤال:**\n**{text}**"
     )
 
-# --- نظام تشغيل الأسئلة مع المؤقت الذكي ---
+# --- نظام تشغيل الأسئلة مع المؤقت وبونص السرعة ---
 async def run_next_question(chat_id, context):
     game = context.chat_data.get('active_game')
     if not game or game['current_idx'] >= len(game['questions']):
@@ -68,24 +69,31 @@ async def run_next_question(chat_id, context):
 
     q = game['questions'][game['current_idx']]
     game['answered'] = False
+    game['start_time'] = time.time() # تسجيل وقت بدء السؤال لحساب السرعة
+    current_q_index = game['current_idx'] 
     
-    ui = get_question_interface(game['current_idx']+1, len(game['questions']), q['categories']['name'], game['settings']['timing_mode'], q['id'], game['owner'], q['question_content'], game['q_time'])
+    ui = get_question_interface(game['current_idx']+1, len(game['questions']), q['categories']['name'], game['settings']['timing_mode'], game['owner'], q['question_content'], game['q_time'])
     await context.bot.send_message(chat_id, ui, parse_mode='Markdown')
 
-    # --- بداية عداد الوقت الفعلي ---
-    current_idx_at_start = game['current_idx'] 
     try:
-        # الانتظار لمدة q_time ثانية (نستخدم النوم ثانية بثانية للتحقق من الإجابة)
+        # حلقة الانتظار (ثانية بثانية)
         for _ in range(game['q_time']):
             await asyncio.sleep(1)
-            # إذا تمت الإجابة (تغيرت game['answered'] إلى True في handle_text)
-            if game.get('answered') or game['current_idx'] != current_idx_at_start:
+            # إذا تمت الإجابة أو انتقل السؤال، ننهي المؤقت لهذا السؤال فوراً
+            if game.get('answered') or game['current_idx'] != current_q_index:
                 return 
 
-        # إذا انتهى الوقت ولم يتم تغيير الحالة (يعني لم يجب أحد)
-        if not game['answered'] and game['current_idx'] == current_idx_at_start:
-            game['answered'] = True # منع أي إجابة متأخرة
-            await context.bot.send_message(chat_id, f"⏰ **انتهى الوقت!**\nالإجابة الصحيحة كانت: *{q['correct_answer']}*", parse_mode='Markdown')
+        # إذا انتهى الوقت ولم تتغير الحالة (يعني لم يجب أحد)
+        if not game['answered'] and game['current_idx'] == current_q_index:
+            game['answered'] = True 
+            timeout_msg = (
+                f"⏰ **انتهى الوقت المخصص للسؤال!**\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"💡 الإجابة الصحيحة هي: *{q['correct_answer']}*\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"🔄 جاري الانتقال للسؤال التالي..."
+            )
+            await context.bot.send_message(chat_id, timeout_msg, parse_mode='Markdown')
             game['current_idx'] += 1
             await asyncio.sleep(2)
             await run_next_question(chat_id, context)
@@ -134,6 +142,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif "set_time_" in data: s['q_time'] = int(data.split("_")[2])
             elif data == "toggle_timing": s['timing_mode'] = "الوقت" if s['timing_mode'] == "السرعة" else "السرعة"
             elif data == "toggle_comp": s['comp_type'] = "عامة" if s['comp_type'] == "خاصة" else "خاصة"
+            elif data == "ans_direct": s['ans_type'] = "مباشرة"
+            elif data == "ans_opt": s['ans_type'] = "خيارات"
             await query.edit_message_reply_markup(reply_markup=get_settings_keyboard(s))
 
         elif data == "save_quiz_final":
@@ -163,12 +173,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         game = context.chat_data['active_game']
         q = game['questions'][game['current_idx']]
         if text == q['correct_answer'] and not game['answered']:
-            game['answered'] = True # هذا يوقف حلقة الـ sleep في run_next_question
+            game['answered'] = True # يوقف المؤقت فوراً
             user_name = update.effective_user.first_name
-            game['scores'][user_name] = game['scores'].get(user_name, 0) + 1
-            await update.message.reply_text(f"✅ صح يا {user_name}!")
+            
+            # حساب زمن الإجابة لنظام البونص
+            elapsed = time.time() - game['start_time']
+            points = 2 if elapsed <= 5 else 1 # بونص سرعة إذا كانت الإجابة أقل من 5 ثوانٍ
+            
+            game['scores'][user_name] = game['scores'].get(user_name, 0) + points
+            
+            feedback = f"✅ **صح يا {user_name}!**"
+            if points == 2:
+                feedback += " 🔥 (بونص سرعة +2)"
+            
+            await update.message.reply_text(feedback, parse_mode='Markdown')
+            
             game['current_idx'] += 1
-            await asyncio.sleep(1)
+            await asyncio.sleep(1.5)
             await run_next_question(update.effective_chat.id, context)
         return
 
@@ -197,4 +218,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__": main()
-            
+    
