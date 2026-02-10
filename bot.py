@@ -24,7 +24,7 @@ def get_main_menu():
 
 def get_settings_keyboard(settings):
     keyboard = [
-        [InlineKeyboardButton(f"عدد الأسئلة الحالي: {settings['num_questions']}", callback_data="none")],
+        [InlineKeyboardButton(f"📊 عدد الأسئلة الحالي: {settings['num_questions']}", callback_data="none")],
         [InlineKeyboardButton(f"✅ {n}" if settings['num_questions'] == n else str(n), callback_data=f"set_num_{n}") for n in [20, 25, 30, 35, 40, 45]],
         [
             InlineKeyboardButton(f"🚀 السرعة" if settings['timing_mode'] == 'السرعة' else "🕒 الوقت", callback_data="toggle_timing"),
@@ -32,8 +32,7 @@ def get_settings_keyboard(settings):
         ],
         [
             InlineKeyboardButton(f"● مباشرة" if settings['ans_type'] == 'مباشرة' else "○ مباشرة", callback_data="ans_direct"),
-            InlineKeyboardButton(f"● خيارات" if settings['ans_type'] == 'خيارات' else "○ خيارات", callback_data="ans_opt"),
-            InlineKeyboardButton(f"● الكل" if settings['ans_type'] == 'الكل' else "○ الكل", callback_data="ans_all")
+            InlineKeyboardButton(f"● خيارات" if settings['ans_type'] == 'خيارات' else "○ خيارات", callback_data="ans_opt")
         ],
         [InlineKeyboardButton("حفظ المسابقة وتسميتها ✅", callback_data="save_quiz_final")],
         [InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz")]
@@ -67,7 +66,7 @@ async def save_question(update_or_query, context, alt_ans):
         else: await update_or_query.effective_chat.send_message(text, reply_markup=reply_markup)
     except Exception as e: logging.error(f"Save Error: {e}")
 
-# 2. معالج الأزرار 
+# 2. معالج الأزرار المطور
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -78,59 +77,61 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['temp_setup'] = {'num_questions': 20, 'timing_mode': 'الوقت', 'comp_type': 'خاصة', 'ans_type': 'مباشرة', 'selected_cats': []}
 
     try:
-        if data.startswith("conf_del_"):
-            cat_id = data.split("_")[2]
-            keyboard = [[InlineKeyboardButton("✅ نعم، احذف", callback_data=f"execute_del_{cat_id}"), InlineKeyboardButton("❌ لا، تراجع", callback_data=f"manage_cat_{cat_id}")]]
-            await query.edit_message_text("⚠️ هل أنت متأكد من حذف القسم نهائياً؟", reply_markup=InlineKeyboardMarkup(keyboard))
-            return
-
-        elif data.startswith("execute_del_"):
-            cat_id = data.split("_")[2]
-            supabase.table("categories").delete().eq("id", cat_id).execute()
-            await query.edit_message_text("✅ تم حذف القسم بنجاح.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 عودة", callback_data="gui_view_cats")]]))
-            return
-
-        elif data.startswith("edit_n_"):
-            cat_id = data.split("_")[2]
-            context.user_data.update({'state': 'WAIT_NEW_NAME', 'cur_cat': cat_id})
-            await query.edit_message_text("📝 ارسل الاسم الجديد للقسم:")
-            return
-
-        elif data.startswith("vq_"):
-            cat_id = data.split("_")[1]
-            questions = supabase.table("questions").select("*").eq("category_id", cat_id).execute()
-            txt = "📑 قائمة الأسئلة:\n\n" if questions.data else "⚠️ لا توجد أسئلة."
-            for i, q in enumerate(questions.data, 1):
-                txt += f"{i}- {q['question_content']}\n✅ {q['correct_answer']}\n---\n"
-            await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 عودة", callback_data=f"manage_cat_{cat_id}")]]))
-            return
-
-        elif data.startswith("add_q_"):
-            cat_id = data.split("_")[2]
-            context.user_data.update({'state': 'WAIT_Q', 'cur_cat': cat_id})
-            await query.edit_message_text("📝 ارسل نص السؤال:")
-            return
-
+        # --- نظام تهيئة المسابقة المصلح ---
         if data == "setup_quiz":
             keyboard = [
-                [InlineKeyboardButton("أقسام الأعضاء", callback_data="quiz_members"), InlineKeyboardButton("أقسام البوت", callback_data="quiz_bot")],
-                [InlineKeyboardButton("الأقسام المختارة", callback_data="quiz_selected"), InlineKeyboardButton("أقسامك الخاصة", callback_data="gui_view_cats")],
+                [InlineKeyboardButton("👥 أقسام الأعضاء", callback_data="quiz_select_flow"), InlineKeyboardButton("🤖 أقسام البوت", callback_data="quiz_bot")],
+                [InlineKeyboardButton("⭐ أقسامك الخاصة", callback_data="quiz_select_flow")], 
                 [InlineKeyboardButton("⚙️ الإعدادات الفنية", callback_data="go_to_settings")],
                 [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main")]
             ]
-            await query.edit_message_text("🎉 قم بتهيئة المسابقة:", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text("🏆 **تهيئة المسابقة:**\nاختر الأقسام التي تود تفعيلها ثم اضبط الإعدادات:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+        elif data == "quiz_select_flow":
+            res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
+            selected = context.user_data['temp_setup']['selected_cats']
+            keyboard = []
+            for c in res.data:
+                mark = "✅" if c['id'] in selected else "📁"
+                keyboard.append([InlineKeyboardButton(f"{mark} {c['name']}", callback_data=f"tgl_cat_{c['id']}")])
+            keyboard.append([InlineKeyboardButton("🔙 حفظ ورجوع", callback_data="setup_quiz")])
+            await query.edit_message_text("📂 اختر الأقسام للمسابقة:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+        elif data.startswith("tgl_cat_"):
+            cat_id = int(data.split("_")[2])
+            selected = context.user_data['temp_setup']['selected_cats']
+            if cat_id in selected: selected.remove(cat_id)
+            else: selected.append(cat_id)
+            # تحديث الواجهة فوراً
+            res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
+            keyboard = []
+            for c in res.data:
+                mark = "✅" if c['id'] in selected else "📁"
+                keyboard.append([InlineKeyboardButton(f"{mark} {c['name']}", callback_data=f"tgl_cat_{c['id']}")])
+            keyboard.append([InlineKeyboardButton("🔙 حفظ ورجوع", callback_data="setup_quiz")])
+            await query.edit_message_text("📂 اختر الأقسام للمسابقة:", reply_markup=InlineKeyboardMarkup(keyboard))
 
         elif data == "go_to_settings":
-            await query.edit_message_text("⚙️ اضبط إعدادات المسابقة:", reply_markup=get_settings_keyboard(context.user_data['temp_setup']))
+            await query.edit_message_text("⚙️ الإعدادات الفنية للمسابقة:", reply_markup=get_settings_keyboard(context.user_data['temp_setup']))
+
+        elif data == "toggle_timing":
+            s = context.user_data['temp_setup']
+            s['timing_mode'] = "السرعة" if s['timing_mode'] == "الوقت" else "الوقت"
+            await query.edit_message_reply_markup(reply_markup=get_settings_keyboard(s))
+
+        elif data == "ans_direct":
+            context.user_data['temp_setup']['ans_type'] = "مباشرة"
+            await query.edit_message_reply_markup(reply_markup=get_settings_keyboard(context.user_data['temp_setup']))
+
+        elif data == "ans_opt":
+            context.user_data['temp_setup']['ans_type'] = "خيارات"
+            await query.edit_message_reply_markup(reply_markup=get_settings_keyboard(context.user_data['temp_setup']))
 
         elif data.startswith("set_num_"):
             context.user_data['temp_setup']['num_questions'] = int(data.split("_")[2])
             await query.edit_message_reply_markup(reply_markup=get_settings_keyboard(context.user_data['temp_setup']))
 
-        elif data == "save_quiz_final":
-            context.user_data['state'] = 'WAIT_QUIZ_NAME'
-            await query.edit_message_text("📝 ممتاز! الآن ارسل (اسم المسابقة) لاعتمادها:")
-
+        # --- أوامر الإدارة العامة ---
         elif data == "gui_view_cats":
             res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
             keyboard = [[InlineKeyboardButton(f"📁 {c['name']}", callback_data=f"manage_cat_{c['id']}")] for c in res.data]
@@ -156,30 +157,30 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
         elif data == "back_to_main": await query.edit_message_text("⚙️ الرئيسية:", reply_markup=get_main_menu())
-        elif data == "ask_alt_no": await save_question(query, context, None)
-        elif data == "ask_alt_yes":
-            context.user_data['state'] = 'WAIT_A2'
-            await query.edit_message_text("📝 ارسل الإجابة البديلة:")
+        elif data == "save_quiz_final":
+            context.user_data['state'] = 'WAIT_QUIZ_NAME'
+            await query.edit_message_text("📝 ممتاز! الآن ارسل (اسم المسابقة) لاعتمادها:")
 
     except Exception as e: logging.error(f"Callback Error: {e}")
 
 # 3. معالج النصوص
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    user_id = update.effective_user.id
+    text, user_id = update.message.text.strip(), update.effective_user.id
     state = context.user_data.get('state')
 
     if text == "تحكم":
         await update.message.reply_text("⚙️ لوحة التحكم:", reply_markup=get_main_menu())
         return
 
-    # إدارة الحالات 
-    if state == 'WAIT_NEW_NAME':
-        cat_id = context.user_data['cur_cat']
-        supabase.table("categories").update({"name": text}).eq("id", cat_id).execute()
+    if state == 'WAIT_CAT_NAME':
+        supabase.table("categories").insert({"name": text, "created_by": user_id}).execute()
         context.user_data['state'] = None
-        await update.message.reply_text(f"✅ تم تغيير الاسم لـ {text}!")
-    
+        res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
+        keyboard = [[InlineKeyboardButton(f"📁 {c['name']}", callback_data=f"manage_cat_{c['id']}")] for c in res.data]
+        keyboard.append([InlineKeyboardButton("➕ إضافة قسم جديد", callback_data="gui_add_cat")])
+        keyboard.append([InlineKeyboardButton("🔙 للرجوع", callback_data="back_to_main")])
+        await update.message.reply_text(f"✅ تم إضافة القسم '{text}' بنجاح! إليك القائمة المحدثة:", reply_markup=InlineKeyboardMarkup(keyboard))
+
     elif state == 'WAIT_QUIZ_NAME':
         s = context.user_data['temp_setup']
         res_set = supabase.table("quiz_settings").insert({
@@ -191,31 +192,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['state'] = None
         await update.message.reply_text(f"✅ تم حفظ المسابقة باسم '{text}' بنجاح!")
 
-    elif state == 'WAIT_CAT_NAME':
-        # [الإصلاح]: حفظ القسم ثم الرجوع خطوة للخلف فوراً
-        supabase.table("categories").insert({"name": text, "created_by": user_id}).execute()
-        context.user_data['state'] = None
-        
-        # جلب القائمة المحدثة لعرضها مجدداً (الرجوع للخلف خطوة)
-        res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
-        keyboard = [[InlineKeyboardButton(f"📁 {c['name']}", callback_data=f"manage_cat_{c['id']}")] for c in res.data]
-        keyboard.append([InlineKeyboardButton("➕ إضافة قسم جديد", callback_data="gui_add_cat")])
-        keyboard.append([InlineKeyboardButton("🔙 للرجوع", callback_data="back_to_main")])
-        
-        await update.message.reply_text(f"✅ تم إضافة القسم '{text}' بنجاح! إليك قائمتك المحدثة:", 
-                                       reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif state == 'WAIT_Q':
-        context.user_data.update({'q_txt': text, 'state': 'WAIT_A1'})
-        await update.message.reply_text("ارسل الإجابة الأولى:")
-
-    elif state == 'WAIT_A1':
-        context.user_data.update({'a1': text, 'state': None})
-        keyboard = [[InlineKeyboardButton("✅ نعم", callback_data="ask_alt_yes"), InlineKeyboardButton("❌ لا", callback_data="ask_alt_no")]]
-        await update.message.reply_text("هل تريد إضافة إجابة بديلة؟", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif state == 'WAIT_A2': await save_question(update, context, text)
-
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -224,4 +200,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__": main()
-    
+            
