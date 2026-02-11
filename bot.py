@@ -420,65 +420,83 @@ def generate_members_keyboard(members, selected_list):
     kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz"))
     return kb
 
-@dp.callback_query_handler(lambda c: c.data.startswith('toggle_mem_'))
-async def toggle_member_selection(c: types.CallbackQuery):
-    m_id = c.data.split('_')[-1]
-    admin_id = c.from_user.id
-    if admin_id not in selected_members: selected_members[admin_id] = []
+# --- 1. واجهة تهيئة المسابقة (متاحة للجميع) ---
+@dp.callback_query_handler(lambda c: c.data == 'setup_quiz', state="*")
+async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    await c.answer()
+    text = "🎉  أهلاً بك! قم بتهيئة المسابقة عن طريق اختيار أحد الخيارات التالية منهنا يمكنك بدا وتشعيل المسابقات:"
     
-    if m_id in selected_members[admin_id]:
-        selected_members[admin_id].remove(m_id)
-    else:
-        selected_members[admin_id].append(m_id)
-    
-    # تحديث الواجهة فوراً
-    res = supabase.table("user_stats").select("user_id, name").execute() # تبسيط للجلب
-    kb = generate_members_keyboard(res.data, selected_members[admin_id])
-    await c.message.edit_reply_markup(reply_markup=kb)
-
-# --- 4. اختيار الأقسام (Category Selection) ---
-@dp.callback_query_handler(lambda c: c.data == 'go_to_cats_selection')
-async def list_selected_members_cats(c: types.CallbackQuery):
-    admin_id = c.from_user.id
-    chosen_ids = selected_members.get(admin_id, [])
-    if not chosen_ids:
-        return await c.answer("⚠️ يرجى اختيار عضو واحد على الأقل!", show_alert=True)
-    
-    res = supabase.table("categories").select("id, name").in_("created_by", chosen_ids).execute()
     kb = InlineKeyboardMarkup(row_width=1)
-    for cat in res.data:
-        kb.add(InlineKeyboardButton(cat['name'], callback_data=f"sel_cat_{cat['id']}"))
-    
-    kb.add(InlineKeyboardButton("✅ تم اختيار الأقسام", callback_data="setup_quiz"))
-    await c.message.edit_text("الآن اختر الأقسام التي تريد تضمينها:", reply_markup=kb)
-
-# --- 5. واجهة الإعدادات المزخرفة 🇵🇸 ---
-@dp.callback_query_handler(lambda c: c.data == 'setup_quiz')
-async def setup_quiz_panel(c: types.CallbackQuery):
-    text = (
-        "؜؜╮━━━━━━━━━━━━━╭\n"
-        "                 *إعدادات المسابقة*\n"
-        "؜╯━━━━━━━━━━━━━╰\n\n"
-        "*طبيعة المنافسة*: خاصة👤\n"
-        "                                          ━━━━━━━━━\n"
-        "🇵🇸| اعتبــار:  السرعة🚀\n"
-        "🇵🇸| الاسئلة:  20\n"
-        "🇵🇸| النقـاط:  20  \n"
-        "                                          ━━━━━━━━━\n"
-        " [*نوع الاسئلة*] \n"
-        "                                                 ━━━━━━━\n"
-        "🇵🇸| مباشـــرة:  ✅\n"
-        "🇵🇸| اختيارات:  \n"
-        "🇵🇸| الكــــــــل:"
-    )
-    kb = InlineKeyboardMarkup(row_width=2).add(
-        InlineKeyboardButton("👥 أقسام الأعضاء", callback_data="members_cats"),
-        InlineKeyboardButton("👤 أقسامك الخاصة", callback_data="list_cats"),
-        InlineKeyboardButton("🤖 أقسام البوت (تطوير)", callback_data="dev"),
-        InlineKeyboardButton("🔙 رجوع", callback_data="back_to_control")
+    kb.add(
+        InlineKeyboardButton("👥 أقسام الأعضاء (اختر من إبداعات الآخرين)", callback_data="members_setup_step1"),
+        InlineKeyboardButton("👤 أقسامك الخاصة (التي أنشأتها أنت)", callback_data="my_setup_step1"),
+        InlineKeyboardButton("🤖 أقسام البوت (قيد التطوير)", callback_data="bot_dev_msg"),
+        InlineKeyboardButton("🔙 رجوع خطوة للخلف", callback_data="start_quiz") # الرجوع للقائمة الرئيسية
     )
     await c.message.edit_text(text, reply_markup=kb)
 
+# --- 2. جلب المبدعين (15+ سؤال) ليختار منهم المستخدم ---
+@dp.callback_query_handler(lambda c: c.data == "members_setup_step1", state="*")
+async def start_member_selection(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    
+    # جلب قائمة من أنشأوا أسئلة من Supabase
+    res = supabase.table("questions").select("created_by").execute()
+    
+    if not res.data:
+        await c.answer("⚠️ لا يوجد أعضاء لديهم أقسام منشورة حالياً.", show_alert=True)
+        return
+
+    from collections import Counter
+    counts = Counter([q['created_by'] for q in res.data])
+    
+    # اختيار الأعضاء الذين لديهم 15 سؤال أو أكثر
+    eligible_ids = [m_id for m_id, count in counts.items() if count >= 15]
+
+    if not eligible_ids:
+        await c.answer("⚠️ لا يوجد أعضاء حالياً وصلوا لـ 15 سؤال.", show_alert=True)
+        return
+
+    await state.update_data(eligible_list=eligible_ids, selected_members=[])
+    await render_members_list(c.message, eligible_ids, [])
+
+# --- 3. عرض القائمة العامة للاختيار ✅ ---
+async def render_members_list(message, eligible_ids, selected_list):
+    kb = InlineKeyboardMarkup(row_width=2)
+    for m_id in eligible_ids:
+        status = "✅ " if m_id in selected_list else ""
+        # إظهار "المبدع" مع آخر 6 أرقام من هويته
+        kb.insert(InlineKeyboardButton(f"{status}المبدع: {m_id[-6:]}", callback_data=f"toggle_mem_{m_id}"))
+    
+    # زر الانتقال للمرحلة التالية (سحب الأقسام)
+    if selected_list:
+        kb.add(InlineKeyboardButton(f"➡️ تم اختيار ({len(selected_list)}) .. عرض أقسامهم", callback_data="go_to_cats_step"))
+    
+    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz"))
+    
+    await message.edit_text(
+        "👥 **أقسام الأعضاء:**\nاختر المبدعين الذين تود رؤية أقسامهم وضمها لمسابقتك:", 
+        reply_markup=kb
+    )
+
+# --- 4. منطق التبديل (Toggle) متاح للجميع ---
+@dp.callback_query_handler(lambda c: c.data.startswith('toggle_mem_'), state="*")
+async def toggle_member(c: types.CallbackQuery, state: FSMContext):
+    m_id = c.data.replace('toggle_mem_', '')
+    data = await state.get_data()
+    selected = data.get('selected_members', [])
+    eligible = data.get('eligible_list', [])
+
+    if m_id in selected:
+        selected.remove(m_id)
+    else:
+        selected.append(m_id)
+    
+    await state.update_data(selected_members=selected)
+    await c.answer()
+    await render_members_list(c.message, eligible, selected)
+        
 # --- الحذف بلمستين ---
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
 async def dbl_del(c: types.CallbackQuery):
