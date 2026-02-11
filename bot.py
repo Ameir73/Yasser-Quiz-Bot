@@ -133,14 +133,17 @@ async def manage_questions_window(c: types.CallbackQuery):
     )
     
     await c.message.edit_text(txt, reply_markup=kb)
-    # --- 1. تعديل اسم القسم ---
+    # --- 1. تعديل اسم القسم (تعديل الرسالة الحالية) ---
 @dp.callback_query_handler(lambda c: c.data.startswith('edit_cat_'))
 async def edit_category_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     cat_id = c.data.split('_')[-1]
     await state.update_data(edit_cat_id=cat_id)
     await Form.waiting_for_new_cat_name.set()
-    await c.message.answer("📝 أرسل اسم القسم الجديد الآن:")
+    
+    # هنا السر: نقوم بتعديل نفس الرسالة بدلاً من إرسال رسالة جديدة
+    await c.message.edit_text("📝 **نظام التعديل:**\n\nأرسل الآن الاسم الجديد للقسم:")
+    
 
 # --- 1. تعديل اسم القسم المطور (مع حذف الرسالة والرجوع التلقائي) ---
 @dp.message_handler(state=Form.waiting_for_new_cat_name)
