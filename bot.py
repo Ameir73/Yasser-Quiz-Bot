@@ -10,7 +10,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
 # --- البيانات الخاصة بياسر ---
-API_TOKEN = '7948017595:AAFw-ILthgp8F9IopGIqCXlwsqXBRDy4UPY'
+API_TOKEN = '7948017595:AAFxVRl9i3eJ1taRbD7W2PZqxzqTMgWb7ho'
 SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubGNidGd6ZHhzYWN3amlwZ2duIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3NDMzMiwiZXhwIjoyMDg2MTUwMzMyfQ.v3SRkONLNlQw5LWhjo03u0fDce3EvWGBpJ02OGg5DEI"
 OWNER_USERNAME = "@Ya_79k"
@@ -70,51 +70,31 @@ async def custom_add_menu(c: types.CallbackQuery):
 @dp.message_handler(state=Form.waiting_for_cat_name)
 async def save_cat(message: types.Message, state: FSMContext):
     try:
-        # إرسال الاسم ومعرف المستخدم لحل مشكلة 'created_by'
+        # 1. إرسال البيانات بشكل صحيح لتجنب خطأ 23502
         supabase.table("categories").insert({
             "name": message.text, 
-            "created_by": message.from_user.id
+            "created_by": str(message.from_user.id)
         }).execute()
         
         await state.finish()
         await message.answer(f"✅ تم حفظ القسم '{message.text}' بنجاح.")
 
-        # جلب القائمة المحدثة لعرضها فوراً كما طلبت
+        # 2. جلب الأقسام لعرضها فوراً كما طلبت
         res = supabase.table("categories").select("*").execute()
         categories = res.data
 
         kb = InlineKeyboardMarkup(row_width=1)
-        for cat in categories:
-            kb.add(InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"manage_questions_{cat['id']}"))
+        if categories:
+            for cat in categories:
+                kb.add(InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"manage_questions_{cat['id']}"))
         
         kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add"))
         await message.answer("📋 اختر القسم لإدارة الأسئلة:", reply_markup=kb)
 
     except Exception as e:
         logging.error(f"Error: {e}")
-        await message.answer("⚠️ حدث خطأ أثناء الحفظ، تأكد من إعدادات الجدول في Supabase.")
+        await message.answer("⚠️ حدث خطأ أثناء الحفظ، جرب مرة أخرى.")
         
-        # 2. رسالة تأكيد سريعة
-        await message.answer(f"✅ تم حفظ القسم '{message.text}' بنجاح.")
-
-        # 3. جلب كل الأقسام لفتح نافذة إدارة الأسئلة فوراً
-        res = supabase.table("categories").select("*").execute()
-        categories = res.data
-
-        kb = InlineKeyboardMarkup(row_width=1)
-        for cat in categories:
-            # ربط كل قسم بكود إدارة الأسئلة الخاص به
-            kb.add(InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"manage_questions_{cat['id']}"))
-        
-        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add"))
-        
-        # إظهار النافذة التي تحبها يا ياسر
-        await message.answer("📋 اختر القسم لإدارة الأسئلة:", reply_markup=kb)
-
-    except Exception as e:
-        logging.error(f"Error: {e}")
-        await message.answer("⚠️ حدث خطأ أثناء الحفظ.")
-
 # --- 3. نظام اختيار الأعضاء (المؤهلين >= 45 سؤال) ---
 @dp.callback_query_handler(lambda c: c.data == 'list_cats')
 async def list_categories_for_questions(c: types.CallbackQuery):
