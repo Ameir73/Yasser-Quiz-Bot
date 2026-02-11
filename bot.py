@@ -84,17 +84,21 @@ async def save_cat(message: types.Message, state: FSMContext):
         await state.finish()
         await message.answer(f"✅ تم حفظ القسم '{message.text}' بنجاح.")
 
-        # 2. جلب الأقسام لعرضها فوراً كما طلبت
-        res = supabase.table("categories").select("*").execute()
+        # 1. جلب معرف المستخدم لفلترة الأقسام فوراً
+        user_id = str(message.from_user.id)
+        
+        # 2. التعديل الجوهري: إضافة شرط .eq لكي تظهر أقسام المنشئ فقط
+        res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
         categories = res.data
 
         kb = InlineKeyboardMarkup(row_width=1)
         if categories:
             for cat in categories:
+                # هنا سيتم عرض أقسام عبير فقط ولن تظهر أقسامك
                 kb.add(InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"manage_questions_{cat['id']}"))
-        
-        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add"))
-        await message.answer("📋 اختر القسم لإدارة الأسئلة:", reply_markup=kb)
+
+        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add_menu"))
+        await message.answer("📋 اختر أحد أقسامك لإدارة الأسئلة:", reply_markup=kb)
 
     except Exception as e:
         logging.error(f"Error: {e}")
