@@ -297,6 +297,74 @@ async def finalize_msg(msg_obj, cat_id):
     kb.add(InlineKeyboardButton("⚙️ العودة للوحة إعدادات القسم", callback_data=f"manage_questions_{cat_id}"))
     await bot.send_message(msg_obj.chat.id, "✅ تم إضافة السؤال بنجاح!", reply_markup=kb)
 
+# --- 5. نظام عرض الأسئلة (يقرأ الإجابة البديلة) ---
+@dp.callback_query_handler(lambda c: c.data.startswith('view_qs_'), state="*")
+async def view_questions(c: types.CallbackQuery):
+    await c.answer()
+    cat_id = c.data.split('_')[-1]
+    
+    # جلب الأسئلة من Supabase
+    questions = supabase.table("questions").select("*").eq("category_id", cat_id).execute()
+    
+    if not questions.data:
+        await c.message.edit_text("⚠️ لا توجد أسئلة مضافة في هذا القسم حالياً.", 
+                                  reply_markup=InlineKeyboardMarkup().add(
+                                      InlineKeyboardButton("🔙 رجوع", callback_data=f"manage_questions_{cat_id}")
+                                  ))
+        return
+
+    txt = f"🔍 **قائمة الأسئلة:**\n\n"
+    for i, q in enumerate(questions.data, 1):
+        txt += f"❓ {i}- {q['question_content']}\n"
+        txt += f"✅ ج1: {q['correct_answer']}\n"
+        # التحقق من العمود الجديد
+        if q.get('alternative_answer'):
+            txt += f"💡 ج2: {q['alternative_answer']}\n"
+        txt += "--- --- --- ---\n"
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("🗑️ حذف الأسئلة", callback_data=f"del_qs_menu_{cat_id}"),
+        InlineKeyboardButton("🔙 رجوع", callback_data=f"manage_questions_{cat_id}")
+    )
+    await c.message.edit_text(txt, reply_markup=kb)
+
+# --- 6. نظام حذف الأسئلة ---
+@dp.callback_query_handler(lambda c: c.data.startswith('del_qs_menu_'), state="*")
+async def delete_questions_menu(c: types.CallbackQuery):
+    await c.answer()
+    cat_id = c.data.split('_')[-1]
+    questions = supabase.table("questions").select("*").eq("category_id", cat_id).execute()
+    
+    kb = InlineKeyboardMarkup(row_width=1)
+    for q in questions.data:
+        kb.add(InlineKeyboardButton(f"🗑️ حذف: {q['question_content'][:25]}...", 
+                                    callback_data=f"pre_del_q_{q['id']}_{cat_id}"))
+    
+    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data=f"manage_questions_{cat_id}"))
+    await c.message.edit_text("🗑️ اختر السؤال المراد حذفه:", reply_markup=kb)
+
+@dp.callback_query_handler(lambda c: c.data.startswith('pre_del_q_'), state="*")
+async def confirm_delete_question(c: types.CallbackQuery):
+    data = c.data.split('_')
+    q_id, cat_id = data[3], data[4]
+    
+    kb = InlineKeyboardMarkup(row_width=2).add(
+        InlineKeyboardButton("✅ نعم، احذف", callback_data=f"final_del_q_{q_id}_{cat_id}"),
+        InlineKeyboardButton("❌ تراجع", callback_data=f"del_qs_menu_{cat_id}")
+    )
+    await c.message.edit_text("⚠️ هل أنت متأكد من حذف هذا السؤال؟", reply_markup=kb)
+
+@dp.callback_query_handler(lambda c: c.data.startswith('final_del_q_'), state="*")
+async def execute_delete_question(c: types.CallbackQuery):
+    data = c.data.split('_')
+    q_id, cat_id = data[3], data[4]
+    
+    # تنفيذ الحذف
+    supabase.table("questions").delete().eq("id", q_id).execute()
+    await c.answer("🗑️ تم الحذف بنجاح", show_alert=True)
+    await delete_questions_menu(c)
+
 # --- 2. حذف القسم مع التأكيد ---
 @dp.callback_query_handler(lambda c: c.data.startswith('confirm_del_cat_'))
 async def confirm_delete_cat(c: types.CallbackQuery):
