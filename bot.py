@@ -496,7 +496,72 @@ async def toggle_member(c: types.CallbackQuery, state: FSMContext):
     await state.update_data(selected_members=selected)
     await c.answer()
     await render_members_list(c.message, eligible, selected)
-        
+
+# --- 5. عرض الأقسام الخاصة بالمبدعين المختارين (المرحلة التالية) ---
+@dp.callback_query_handler(lambda c: c.data == "go_to_cats_step", state="*")
+async def show_selected_members_cats(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    data = await state.get_data()
+    chosen_ids = data.get('selected_members', [])
+    
+    if not chosen_ids:
+        await c.answer("⚠️ يرجى اختيار مبدع واحد على الأقل!", show_alert=True)
+        return
+
+    # جلب الأقسام التابعة لهؤلاء المبدعين من Supabase
+    res = supabase.table("categories").select("id, name").in_("created_by", chosen_ids).execute()
+    
+    if not res.data:
+        await c.answer("⚠️ هؤلاء المبدعين ليس لديهم أقسام حالياً.", show_alert=True)
+        return
+
+    # تخزين الأقسام المتاحة والبدء بقائمة فارغة من المختار ✅
+    await state.update_data(eligible_cats=res.data, selected_cats=[])
+    await render_categories_list(c.message, res.data, [])
+
+# --- 6. دالة رسم قائمة الأقسام مع علامة الصح ✅ ---
+async def render_categories_list(message, eligible_cats, selected_cats):
+    kb = InlineKeyboardMarkup(row_width=2)
+    for cat in eligible_cats:
+        # إذا كان القسم في قائمة المختارين يظهر بجانبه علامة صح ✅
+        status = "✅ " if str(cat['id']) in selected_cats else ""
+        kb.insert(InlineKeyboardButton(f"{status}{cat['name']}", callback_data=f"toggle_cat_{cat['id']}"))
+    
+    # يظهر زر "تم" للانتقال للإعدادات فقط إذا تم اختيار قسم واحد على الأقل
+    if selected_cats:
+        kb.add(InlineKeyboardButton(f"➡️ تم اختيار ({len(selected_cats)}) .. إعدادات المسابقة", callback_data="final_quiz_settings"))
+    
+    kb.add(InlineKeyboardButton("🔙 رجوع لاختيار المبدعين", callback_data="members_setup_step1"))
+    
+    await message.edit_text(
+        "📂 **أقسام المبدعين المختارين:**\n"
+        "اختر الأقسام التي تود حفظها وتشغيلها في مسابقتك:", 
+        reply_markup=kb
+    )
+
+# --- 7. تبديل اختيار القسم (Toggle) للأقسام ---
+@dp.callback_query_handler(lambda c: c.data.startswith('toggle_cat_'), state="*")
+async def toggle_category_selection(c: types.CallbackQuery, state: FSMContext):
+    cat_id = c.data.replace('toggle_cat_', '')
+    data = await state.get_data()
+    selected = data.get('selected_cats', [])
+    eligible = data.get('eligible_cats', [])
+
+    if cat_id in selected:
+        selected.remove(cat_id)
+    else:
+        selected.append(cat_id)
+    
+    await state.update_data(selected_cats=selected)
+    await c.answer()
+    await render_categories_list(c.message, eligible, selected)
+
+# --- 8. الانتقال إلى لوحة إعدادات المسابقة (زر تم النهائي) ---
+@dp.callback_query_handler(lambda c: c.data == "final_quiz_settings", state="*")
+async def final_quiz_settings_panel(c: types.CallbackQuery, state: FSMContext):
+    await c.answer("⚙️ جاري فتح لوحة الإعدادات...")
+    # هنا سنعرض واجهة (الوقت وعدد الأسئلة) في الخطوة القادمة
+    await c.message.edit_text("🎮 **لوحة إعدادات أسئلة المسابقة**\n\n(هنا سيتم ضبط التوقيت وعدد الأسئلة والبدء قريباً)")
 # --- الحذف بلمستين ---
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
 async def dbl_del(c: types.CallbackQuery):
