@@ -12,7 +12,7 @@ from supabase import create_client, Client
 # --- البيانات الخاصة بياسر ---
 API_TOKEN = '7948017595:AAFw-ILthgp8F9IopGIqCXlwsqXBRDy4UPY'
 SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
-SUPABASE_KEY = "sb_publishable_6ZSOF45eZxKKnreEKGgj5Q_sLbpmiLQ"
+SUPABASE_KEY = "sb_secret_HNrHo_fDfAQ7KzOGdk8-HA_OXlxZ-cC"
 OWNER_USERNAME = "@Ya_79k"
 MY_TELEGRAM_URL = "https://t.me/Ya_79k"
 
