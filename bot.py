@@ -224,7 +224,7 @@ async def process_first_ans(message: types.Message, state: FSMContext):
     msg = await message.answer("هل تريد إضافة إجابة ثانية (بديلة) لهذا السؤال؟", reply_markup=kb)
     await state.update_data(last_bot_msg_id=msg.message_id)
 
-# --- 3. معالجة إضافة إجابة ثانية (تم إصلاح التعليق) ---
+# --- 3. معالجة الإجابة الثانية (إصلاح مشكلة التعليق النهائي) ---
 @dp.callback_query_handler(lambda c: c.data == 'add_second_ans', state='*')
 async def add_second_ans_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
@@ -234,47 +234,53 @@ async def add_second_ans_start(c: types.CallbackQuery, state: FSMContext):
 @dp.message_handler(state=Form.waiting_for_ans2)
 async def process_second_ans(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    # حذف رسائل الشات ليبقى نظيفاً
-    try:
-        await message.delete()
-        await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
-    except: pass
+    cat_id = data.get('current_cat_id')
     
-    # الحفظ في قاعدة البيانات Supabase
+    # 1. الحفظ في Supabase
     supabase.table("questions").insert({
-        "category_id": data['current_cat_id'],
-        "question_content": data['q_content'],
-        "correct_answer": data['ans1'],
+        "category_id": cat_id,
+        "question_content": data.get('q_content'),
+        "correct_answer": data.get('ans1'),
         "alternative_answer": message.text,
         "created_by": str(message.from_user.id)
     }).execute()
-    
-    # استدعاء الدالة النهائية (تأكد من كتابة الاسم صحيحاً هنا)
-    await finalize_and_return(message, state, data['current_cat_id'])
 
-# --- 4. معالجة الحفظ بإجابة واحدة فقط ---
+    # 2. إنهاء الحالة فوراً لإيقاف حذف رسائلك (أهم خطوة)
+    await state.finish()
+
+    # 3. تنظيف الشات
+    try:
+        await message.delete()
+        if 'last_bot_msg_id' in data:
+            await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
+    except: pass
+
+    # 4. إظهار زر النجاح والرجوع
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("⚙️ العودة للوحة إعدادات القسم", callback_data=f"manage_questions_{cat_id}"))
+    await message.answer("✅ تم إضافة السؤال والاجابات بنجاح!", reply_markup=kb)
+
+# --- 4. معالجة اختيار "لا" (إجابة واحدة) ---
 @dp.callback_query_handler(lambda c: c.data == 'no_second_ans', state='*')
 async def finalize_no_second(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     data = await state.get_data()
+    cat_id = data.get('current_cat_id')
     
     supabase.table("questions").insert({
-        "category_id": data['current_cat_id'],
-        "question_content": data['q_content'],
-        "correct_answer": data['ans1'],
+        "category_id": cat_id,
+        "question_content": data.get('q_content'),
+        "correct_answer": data.get('ans1'),
         "created_by": str(c.from_user.id)
     }).execute()
     
+    await state.finish() # إيقاف الحذف
     try: await c.message.delete()
     except: pass
-    await finalize_and_return(c.message, state, data['current_cat_id'])
 
-# --- دالة إنهاء الحالة والرجوع (البطل الذي يوقف الحذف) ---
-async def finalize_and_return(message, state, cat_id):
-    await state.finish() # هذه أهم خطوة لإيقاف حذف رسائلك
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("⚙️ العودة للوحة إعدادات القسم", callback_data=f"manage_questions_{cat_id}"))
-    await bot.send_message(message.chat.id, "✅ تم إضافة السؤال والاجابات بنجاح!", reply_markup=kb)
+    await bot.send_message(c.message.chat.id, "✅ تم إضافة السؤال بنجاح!", reply_markup=kb)
     
 # --- 2. حذف القسم مع التأكيد ---
 @dp.callback_query_handler(lambda c: c.data.startswith('confirm_del_cat_'))
