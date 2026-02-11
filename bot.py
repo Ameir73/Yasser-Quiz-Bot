@@ -73,11 +73,32 @@ async def btn_add_cat(c: types.CallbackQuery):
     await c.message.answer("📝 اكتب اسم القسم الجديد (دين، عامة...):")
 
 @dp.message_handler(state=Form.waiting_for_cat_name)
-async def save_cat(message: types.Message, state: FSMContext):
-    supabase.table("categories").insert({"name": message.text, "created_by": message.from_user.id}).execute()
-    await state.finish()
-    await message.answer(f"✅ تم حفظ القسم بنجاح.")
-    await control_panel(message)
+async def save_cat_and_show_list(message: types.Message, state: FSMContext):
+    try:
+        # 1. حفظ القسم الجديد في قاعدة البيانات
+        supabase.table("categories").insert({"name": message.text}).execute()
+        await state.finish()
+        
+        # 2. رسالة تأكيد سريعة
+        await message.answer(f"✅ تم حفظ القسم '{message.text}' بنجاح.")
+
+        # 3. جلب كل الأقسام لفتح نافذة إدارة الأسئلة فوراً
+        res = supabase.table("categories").select("*").execute()
+        categories = res.data
+
+        kb = InlineKeyboardMarkup(row_width=1)
+        for cat in categories:
+            # ربط كل قسم بكود إدارة الأسئلة الخاص به
+            kb.add(InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"manage_questions_{cat['id']}"))
+        
+        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add"))
+        
+        # إظهار النافذة التي تحبها يا ياسر
+        await message.answer("📋 اختر القسم لإدارة الأسئلة:", reply_markup=kb)
+
+    except Exception as e:
+        logging.error(f"Error: {e}")
+        await message.answer("⚠️ حدث خطأ أثناء الحفظ.")
 
 # --- 3. نظام اختيار الأعضاء (المؤهلين >= 45 سؤال) ---
 @dp.callback_query_handler(lambda c: c.data == 'list_cats')
