@@ -224,7 +224,7 @@ async def process_first_ans(message: types.Message, state: FSMContext):
     msg = await message.answer("هل تريد إضافة إجابة ثانية (بديلة) لهذا السؤال؟", reply_markup=kb)
     await state.update_data(last_bot_msg_id=msg.message_id)
 
-# --- 3. معالجة الإجابة الثانية (إصلاح مشكلة التعليق النهائي) ---
+# --- 3. معالجة الإجابة الثانية (نسخة آمنة ضد أخطاء قاعدة البيانات) ---
 @dp.callback_query_handler(lambda c: c.data == 'add_second_ans', state='*')
 async def add_second_ans_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
@@ -235,53 +235,41 @@ async def add_second_ans_start(c: types.CallbackQuery, state: FSMContext):
 async def process_second_ans(message: types.Message, state: FSMContext):
     data = await state.get_data()
     cat_id = data.get('current_cat_id')
-    
-    # 1. الحفظ في Supabase
-    supabase.table("questions").insert({
-        "category_id": cat_id,
-        "question_content": data.get('q_content'),
-        "correct_answer": data.get('ans1'),
-        "alternative_answer": message.text,
-        "created_by": str(message.from_user.id)
-    }).execute()
 
-    # 2. إنهاء الحالة فوراً لإيقاف حذف رسائلك (أهم خطوة)
+    # إيقاف الحذف فوراً قبل محاولة الحفظ (لضمان عدم التعليق)
     await state.finish()
 
-    # 3. تنظيف الشات
+    try:
+        # محاولة الحفظ في Supabase
+        supabase.table("questions").insert({
+            "category_id": cat_id,
+            "question_content": data.get('q_content'),
+            "correct_answer": data.get('ans1'),
+            "alternative_answer": message.text, # هذا العمود الذي يسبب الخطأ
+            "created_by": str(message.from_user.id)
+        }).execute()
+        txt = "✅ تم إضافة السؤال والاجابتين بنجاح!"
+    except Exception as e:
+        # إذا فشل بسبب العمود المفقود، سيحفظ الإجابة الأولى فقط ويخبرك
+        txt = "⚠️ تم حفظ السؤال بالإجابة الأولى فقط (يرجى إضافة عمود alternative_answer في Supabase)."
+        supabase.table("questions").insert({
+            "category_id": cat_id,
+            "question_content": data.get('q_content'),
+            "correct_answer": data.get('ans1'),
+            "created_by": str(message.from_user.id)
+        }).execute()
+
+    # تنظيف الشات وإظهار الزر
     try:
         await message.delete()
         if 'last_bot_msg_id' in data:
             await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
     except: pass
 
-    # 4. إظهار زر النجاح والرجوع
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("⚙️ العودة للوحة إعدادات القسم", callback_data=f"manage_questions_{cat_id}"))
-    await message.answer("✅ تم إضافة السؤال والاجابات بنجاح!", reply_markup=kb)
-
-# --- 4. معالجة اختيار "لا" (إجابة واحدة) ---
-@dp.callback_query_handler(lambda c: c.data == 'no_second_ans', state='*')
-async def finalize_no_second(c: types.CallbackQuery, state: FSMContext):
-    await c.answer()
-    data = await state.get_data()
-    cat_id = data.get('current_cat_id')
-    
-    supabase.table("questions").insert({
-        "category_id": cat_id,
-        "question_content": data.get('q_content'),
-        "correct_answer": data.get('ans1'),
-        "created_by": str(c.from_user.id)
-    }).execute()
-    
-    await state.finish() # إيقاف الحذف
-    try: await c.message.delete()
-    except: pass
-
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("⚙️ العودة للوحة إعدادات القسم", callback_data=f"manage_questions_{cat_id}"))
-    await bot.send_message(c.message.chat.id, "✅ تم إضافة السؤال بنجاح!", reply_markup=kb)
-    
+    await message.answer(txt, reply_markup=kb)
+       
 # --- 2. حذف القسم مع التأكيد ---
 @dp.callback_query_handler(lambda c: c.data.startswith('confirm_del_cat_'))
 async def confirm_delete_cat(c: types.CallbackQuery):
