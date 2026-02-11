@@ -450,7 +450,24 @@ async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
         InlineKeyboardButton("🔙 رجوع خطوة للخلف", callback_data="start_quiz") # الرجوع للقائمة الرئيسية
     )
     await c.message.edit_text(text, reply_markup=kb)
+# --- 1.5 - جلب الأقسام الخاصة بالمستخدم (الزر الثاني) ---
+@dp.callback_query_handler(lambda c: c.data == 'my_setup_step1', state="*")
+async def start_private_selection(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    user_id = str(c.from_user.id)
+    
+    # جلب الأقسام التي أنشأتها أنت فقط لضمان الخصوصية
+    res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
+    
+    if not res.data:
+        await c.answer("⚠️ ليس لديك أقسام خاصة بك حالياً!", show_alert=True)
+        return
 
+    # حفظ الأقسام لبدء الاختيار
+    await state.update_data(eligible_list=res.data, selected_members=[user_id]) 
+    
+    # استدعاء دالة الرسم الموجودة في السطر 480 عندك
+    await render_members_list(c.message, res.data, [])
 # --- 2. جلب المبدعين (15+ سؤال) ليختار منهم المستخدم ---
 @dp.callback_query_handler(lambda c: c.data == "members_setup_step1", state="*")
 async def start_member_selection(c: types.CallbackQuery, state: FSMContext):
