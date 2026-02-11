@@ -142,23 +142,51 @@ async def edit_category_start(c: types.CallbackQuery, state: FSMContext):
     await Form.waiting_for_new_cat_name.set()
     await c.message.answer("📝 أرسل اسم القسم الجديد الآن:")
 
+# --- 1. تعديل اسم القسم المطور (مع حذف الرسالة والرجوع التلقائي) ---
 @dp.message_handler(state=Form.waiting_for_new_cat_name)
 async def save_edited_category(message: types.Message, state: FSMContext):
     data = await state.get_data()
     cat_id = data['edit_cat_id']
     new_name = message.text
     
-    # تحديث في Supabase
+    # تحديث الاسم في Supabase
     supabase.table("categories").update({"name": new_name}).eq("id", cat_id).execute()
     
+    # تنظيف الشات: حذف رسالة المستخدم "الاسم الجديد"
+    try:
+        await message.delete()
+    except:
+        pass
+
     await state.finish()
-    await message.answer(f"✅ تم تغيير اسم القسم إلى: {new_name}")
     
-    # كود العودة التلقائية للوحة القسم المحدثة
-    res = supabase.table("categories").select("name").eq("id", cat_id).single().execute()
-    txt = f"⚙️ **إعدادات القسم: {res.data['name']}**\n\nتم التحديث بنجاح!"
-    # هنا يمكنك استدعاء دالة manage_questions_window لعرض اللوحة مجدداً
-    await message.answer("استخدم القائمة لإدارة القسم الجديد.")
+    # جلب البيانات المحدثة لإعادة عرض اللوحة
+    cat_res = supabase.table("categories").select("name").eq("id", cat_id).single().execute()
+    q_res = supabase.table("questions").select("*", count="exact").eq("category_id", cat_id).execute()
+    q_count = q_res.count if q_res.count else 0
+    
+    txt = (f"⚙️ **إعدادات القسم: {cat_res.data['name']}**\n\n"
+           f"✅ تم تحديث الاسم بنجاح!\n"
+           f"📊 عدد الأسئلة المضافة: {q_count}\n"
+           f"ماذا تريد أن تفعل الآن؟")
+
+    # إعادة بناء الأزرار
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("➕ إضافة سؤال مباشر", callback_data=f"add_q_{cat_id}"),
+        InlineKeyboardButton("📝 تعديل اسم القسم", callback_data=f"edit_cat_{cat_id}")
+    )
+    kb.add(
+        InlineKeyboardButton("🔍 عرض الأسئلة", callback_data=f"view_qs_{cat_id}"),
+        InlineKeyboardButton("🗑️ حذف الأسئلة", callback_data=f"del_qs_menu_{cat_id}")
+    )
+    kb.add(InlineKeyboardButton("❌ حذف القسم", callback_data=f"confirm_del_cat_{cat_id}"))
+    kb.add(
+        InlineKeyboardButton("🔙 رجوع", callback_data="list_cats"),
+        InlineKeyboardButton("🏠 التحكم الرئيسية", callback_data="back_to_control")
+    )
+
+    await message.answer(txt, reply_markup=kb)
 
 # --- 2. حذف القسم مع التأكيد ---
 @dp.callback_query_handler(lambda c: c.data.startswith('confirm_del_cat_'))
