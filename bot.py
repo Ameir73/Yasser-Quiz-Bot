@@ -388,15 +388,16 @@ async def execute_delete_cat(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == 'list_cats')
 async def list_categories_for_questions(c: types.CallbackQuery):
     try:
-        # جلب معرف المستخدم الحالي لفلترة الأقسام
+        # 1. جلب معرف المستخدم الحالي (للتأكد من خصوصية الأقسام)
         user_id = str(c.from_user.id)
         
-        # جلب الأقسام الخاصة بهذا المستخدم فقط من قاعدة البيانات
+        # 2. طلب الأقسام التي تخص هذا المستخدم فقط باستخدام .eq()
+        # هذا هو السطر الذي سيمنع عبير من رؤية أقسامك
         res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
         categories = res.data
 
         if not categories:
-            await c.answer("⚠️ لا توجد أقسام مضافة خاصة بك حالياً", show_alert=True)
+            await c.answer("⚠️ ليس لديك أقسام خاصة بك حالياً.", show_alert=True)
             return
 
         kb = InlineKeyboardMarkup(row_width=1)
@@ -408,9 +409,9 @@ async def list_categories_for_questions(c: types.CallbackQuery):
         await c.message.edit_text("📋 اختر أحد أقسامك لإدارة الأسئلة:", reply_markup=kb)
 
     except Exception as e:
-        logging.error(f"Error: {e}")
-        await c.answer("⚠️ حدث خطأ في عرض الأقسام")
-
+        logging.error(f"Filter Error: {e}")
+        await c.answer("⚠️ حدث خطأ في تصفية الأقسام.")
+        
 def generate_members_keyboard(members, selected_list):
     kb = InlineKeyboardMarkup(row_width=2)
     for m in members:
