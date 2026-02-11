@@ -9,14 +9,12 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
-# --- البيانات الخاصة بياسر (التزام تام بالبيانات) ---
+# --- البيانات الخاصة بياسر ---
 API_TOKEN = '7948017595:AAFw-ILthgp8F9IopGIqCXlwsqXBRDy4UPY'
 SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
 SUPABASE_KEY = "sb_publishable_6ZSOF45eZxKKnreEKGgj5Q_sLbpmiLQ"
-OWNER_ID = 7988144062
 OWNER_USERNAME = "@Ya_79k"
-BOT_USERNAME = "@Ya_79kbot"
-MY_TELEGRAM_URL = f"https://t.me/Ya_79k"
+MY_TELEGRAM_URL = "https://t.me/Ya_79k"
 
 # الربط بسوبابيس
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
