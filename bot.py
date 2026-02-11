@@ -99,7 +99,40 @@ async def save_cat(message: types.Message, state: FSMContext):
         logging.error(f"Error: {e}")
         await message.answer("⚠️ حدث خطأ أثناء الحفظ، جرب مرة أخرى.")
         
-# --- 3. نظام اختيار الأعضاء (المؤهلين >= 45 سؤال) ---
+# 1. نافذة إعدادات القسم عند الضغط على اسمه
+@dp.callback_query_handler(lambda c: c.data.startswith('manage_questions_'))
+async def manage_questions_window(c: types.CallbackQuery):
+    await c.answer()
+    cat_id = c.data.split('_')[-1]
+    
+    # جلب معلومات القسم وعدد الأسئلة
+    cat_res = supabase.table("categories").select("name").eq("id", cat_id).single().execute()
+    q_res = supabase.table("questions").select("*", count="exact").eq("category_id", cat_id).execute()
+    
+    cat_name = cat_res.data['name']
+    q_count = q_res.count if q_res.count else 0
+
+    txt = (f"⚙️ **إعدادات القسم: {cat_name}**\n\n"
+           f"📊 عدد الأسئلة المضافة: {q_count}\n"
+           f"ماذا تريد أن تفعل الآن؟")
+
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("➕ إضافة سؤال مباشر", callback_data=f"add_q_{cat_id}"),
+        InlineKeyboardButton("📝 تعديل اسم القسم", callback_data=f"edit_cat_{cat_id}")
+    )
+    kb.add(
+        InlineKeyboardButton("🔍 عرض الأسئلة", callback_data=f"view_qs_{cat_id}"),
+        InlineKeyboardButton("🗑️ حذف الأسئلة", callback_data=f"del_qs_menu_{cat_id}")
+    )
+    kb.add(InlineKeyboardButton("❌ حذف القسم", callback_data=f"confirm_del_cat_{cat_id}"))
+    kb.add(
+        InlineKeyboardButton("🔙 رجوع", callback_data="list_cats"),
+        InlineKeyboardButton("🏠 التحكم الرئيسية", callback_data="back_to_control")
+    )
+    
+    await c.message.edit_text(txt, reply_markup=kb)
+    
 @dp.callback_query_handler(lambda c: c.data == 'list_cats')
 async def list_categories_for_questions(c: types.CallbackQuery):
     try:
