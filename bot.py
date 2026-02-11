@@ -80,30 +80,29 @@ async def save_cat(message: types.Message, state: FSMContext):
     await control_panel(message)
 
 # --- 3. نظام اختيار الأعضاء (المؤهلين >= 45 سؤال) ---
-@dp.callback_query_handler(lambda c: c.data == 'members_cats')
-async def list_eligible_members(c: types.CallbackQuery):
-    # جلب المستخدمين الذين لديهم 45 سؤال أو أكثر عبر Supabase
-    res = supabase.rpc('get_eligible_users').execute() # نفترض وجود دالة rpc أو استعلام تجميعي
-    # إذا لم تكن الدالة موجودة، نستخدم استعلام الأسئلة يدوياً
-    qs = supabase.table("questions").select("created_by").execute()
-    counts = {}
-    for q in qs.data:
-        uid = q['created_by']
-        counts[uid] = counts.get(uid, 0) + 1
-    
-    eligible_ids = [uid for uid, count in counts.items() if count >= 45]
-    
-    if not eligible_ids:
-        return await c.answer("⚠️ لا يوجد أعضاء لديهم 45 سؤال أو أكثر حالياً.", show_alert=True)
-    
-    admin_id = c.from_user.id
-    selected_members[admin_id] = []
-    
-    # جلب أسماء هؤلاء الأعضاء من جدول user_stats
-    users_res = supabase.table("user_stats").select("user_id, name").in_("user_id", eligible_ids).execute()
-    
-    kb = generate_members_keyboard(users_res.data, [])
-    await c.message.edit_text("اختر الأعضاء (أصحاب الأقسام > 45 سؤال):", reply_markup=kb)
+@dp.callback_query_handler(lambda c: c.data == 'list_cats')
+async def list_categories_for_questions(c: types.CallbackQuery):
+    try:
+        # جلب الأقسام التي تم حفظها بنجاح
+        res = supabase.table("categories").select("*").execute()
+        categories = res.data
+
+        if not categories:
+            await c.answer("⚠️ لا توجد أقسام مضافة حالياً", show_alert=True)
+            return
+
+        kb = InlineKeyboardMarkup(row_width=1)
+        for cat in categories:
+            # صنع زر لكل قسم لإضافة الأسئلة إليه
+            kb.add(InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"manage_questions_{cat['id']}"))
+        
+        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add"))
+        
+        await c.message.edit_text("📋 اختر القسم لإدارة الأسئلة:", reply_markup=kb)
+
+    except Exception as e:
+        logging.error(f"Error: {e}")
+        await c.answer("⚠️ حدث خطأ في عرض الأقسام")
 
 def generate_members_keyboard(members, selected_list):
     kb = InlineKeyboardMarkup(row_width=2)
