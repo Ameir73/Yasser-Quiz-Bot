@@ -66,7 +66,10 @@ async def custom_add_menu(c: types.CallbackQuery):
         InlineKeyboardButton("🔙 الرجوع صفحه التحكم", callback_data="back_to_control")
     )
     await c.message.edit_text("أهلاً بك في لوحة اعدادات أقسامك الخاصة:", reply_markup=kb)
-
+@dp.callback_query_handler(lambda c: c.data == 'add_new_cat')
+async def btn_add_cat(c: types.CallbackQuery):
+    await Form.waiting_for_cat_name.set()
+    await c.message.answer("📝 اكتب اسم القسم الجديد (دين، عامة...):")
 @dp.message_handler(state=Form.waiting_for_cat_name)
 async def save_cat(message: types.Message, state: FSMContext):
     try:
