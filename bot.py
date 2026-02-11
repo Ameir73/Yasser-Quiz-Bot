@@ -132,6 +132,52 @@ async def manage_questions_window(c: types.CallbackQuery):
     )
     
     await c.message.edit_text(txt, reply_markup=kb)
+    # --- 1. تعديل اسم القسم ---
+@dp.callback_query_handler(lambda c: c.data.startswith('edit_cat_'))
+async def edit_category_start(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    cat_id = c.data.split('_')[-1]
+    await state.update_data(edit_cat_id=cat_id)
+    await Form.waiting_for_new_cat_name.set()
+    await c.message.answer("📝 أرسل اسم القسم الجديد الآن:")
+
+@dp.message_handler(state=Form.waiting_for_new_cat_name)
+async def save_edited_category(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    cat_id = data['edit_cat_id']
+    new_name = message.text
+    
+    # تحديث في Supabase
+    supabase.table("categories").update({"name": new_name}).eq("id", cat_id).execute()
+    
+    await state.finish()
+    await message.answer(f"✅ تم تغيير اسم القسم إلى: {new_name}")
+    
+    # كود العودة التلقائية للوحة القسم المحدثة
+    res = supabase.table("categories").select("name").eq("id", cat_id).single().execute()
+    txt = f"⚙️ **إعدادات القسم: {res.data['name']}**\n\nتم التحديث بنجاح!"
+    # هنا يمكنك استدعاء دالة manage_questions_window لعرض اللوحة مجدداً
+    await message.answer("استخدم القائمة لإدارة القسم الجديد.")
+
+# --- 2. حذف القسم مع التأكيد ---
+@dp.callback_query_handler(lambda c: c.data.startswith('confirm_del_cat_'))
+async def confirm_delete_cat(c: types.CallbackQuery):
+    await c.answer()
+    cat_id = c.data.split('_')[-1]
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("✅ نعم، احذف", callback_data=f"final_del_cat_{cat_id}"),
+        InlineKeyboardButton("❌ لا، تراجع", callback_data=f"manage_questions_{cat_id}")
+    )
+    await c.message.edit_text("⚠️ هل أنت متأكد من حذف هذا القسم نهائياً مع كل أسئلته؟", reply_markup=kb)
+
+@dp.callback_query_handler(lambda c: c.data.startswith('final_del_cat_'))
+async def execute_delete_cat(c: types.CallbackQuery):
+    cat_id = c.data.split('_')[-1]
+    supabase.table("categories").delete().eq("id", cat_id).execute()
+    await c.answer("🗑️ تم الحذف بنجاح", show_alert=True)
+    # الرجوع لقائمة الأقسام الرئيسية
+    await custom_add_menu(c)
     
 @dp.callback_query_handler(lambda c: c.data == 'list_cats')
 async def list_categories_for_questions(c: types.CallbackQuery):
