@@ -68,6 +68,7 @@ async def custom_add_menu(c: types.CallbackQuery):
     await c.message.edit_text("أهلاً بك في لوحة اعدادات أقسامك الخاصة:", reply_markup=kb)
 @dp.callback_query_handler(lambda c: c.data == 'add_new_cat')
 async def btn_add_cat(c: types.CallbackQuery):
+    await c.answer() # هذا السطر يخبر تليجرام أن الأمر وصل فيلغي التعليق فوراً
     await Form.waiting_for_cat_name.set()
     await c.message.answer("📝 اكتب اسم القسم الجديد (دين، عامة...):")
 @dp.message_handler(state=Form.waiting_for_cat_name)
