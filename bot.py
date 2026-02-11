@@ -388,22 +388,24 @@ async def execute_delete_cat(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == 'list_cats')
 async def list_categories_for_questions(c: types.CallbackQuery):
     try:
-        # جلب الأقسام التي تم حفظها بنجاح
-        res = supabase.table("categories").select("*").execute()
+        # جلب معرف المستخدم الحالي لفلترة الأقسام
+        user_id = str(c.from_user.id)
+        
+        # جلب الأقسام الخاصة بهذا المستخدم فقط من قاعدة البيانات
+        res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
         categories = res.data
 
         if not categories:
-            await c.answer("⚠️ لا توجد أقسام مضافة حالياً", show_alert=True)
+            await c.answer("⚠️ لا توجد أقسام مضافة خاصة بك حالياً", show_alert=True)
             return
 
         kb = InlineKeyboardMarkup(row_width=1)
         for cat in categories:
-            # صنع زر لكل قسم لإضافة الأسئلة إليه
+            # صنع زر لكل قسم خاص بالمستخدم فقط
             kb.add(InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"manage_questions_{cat['id']}"))
-        
-        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add"))
-        
-        await c.message.edit_text("📋 اختر القسم لإدارة الأسئلة:", reply_markup=kb)
+
+        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add_menu"))
+        await c.message.edit_text("📋 اختر أحد أقسامك لإدارة الأسئلة:", reply_markup=kb)
 
     except Exception as e:
         logging.error(f"Error: {e}")
