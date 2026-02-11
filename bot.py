@@ -67,17 +67,32 @@ async def custom_add_menu(c: types.CallbackQuery):
     )
     await c.message.edit_text("أهلاً بك في لوحة اعدادات أقسامك الخاصة:", reply_markup=kb)
 
-@dp.callback_query_handler(lambda c: c.data == 'add_new_cat')
-async def btn_add_cat(c: types.CallbackQuery):
-    await Form.waiting_for_cat_name.set()
-    await c.message.answer("📝 اكتب اسم القسم الجديد (دين، عامة...):")
-
 @dp.message_handler(state=Form.waiting_for_cat_name)
-async def save_cat_and_show_list(message: types.Message, state: FSMContext):
+async def save_cat(message: types.Message, state: FSMContext):
     try:
-        # 1. حفظ القسم الجديد في قاعدة البيانات
-        supabase.table("categories").insert({"name": message.text}).execute()
+        # إرسال الاسم ومعرف المستخدم لحل مشكلة 'created_by'
+        supabase.table("categories").insert({
+            "name": message.text, 
+            "created_by": message.from_user.id
+        }).execute()
+        
         await state.finish()
+        await message.answer(f"✅ تم حفظ القسم '{message.text}' بنجاح.")
+
+        # جلب القائمة المحدثة لعرضها فوراً كما طلبت
+        res = supabase.table("categories").select("*").execute()
+        categories = res.data
+
+        kb = InlineKeyboardMarkup(row_width=1)
+        for cat in categories:
+            kb.add(InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"manage_questions_{cat['id']}"))
+        
+        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add"))
+        await message.answer("📋 اختر القسم لإدارة الأسئلة:", reply_markup=kb)
+
+    except Exception as e:
+        logging.error(f"Error: {e}")
+        await message.answer("⚠️ حدث خطأ أثناء الحفظ، تأكد من إعدادات الجدول في Supabase.")
         
         # 2. رسالة تأكيد سريعة
         await message.answer(f"✅ تم حفظ القسم '{message.text}' بنجاح.")
