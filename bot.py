@@ -10,7 +10,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
 # --- البيانات الخاصة بياسر ---
-API_TOKEN = '7948017595:AAE12uTviRq_riVV2OdHjl9UnBTrT0ijew4'
+API_TOKEN = '7948017595:AAGAwj1ORCJ18ZE2coOdxnuPISydhzLubBw'
 SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubGNidGd6ZHhzYWN3amlwZ2duIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3NDMzMiwiZXhwIjoyMDg2MTUwMzMyfQ.v3SRkONLNlQw5LWhjo03u0fDce3EvWGBpJ02OGg5DEI"
 OWNER_USERNAME = "@Ya_79k"
