@@ -29,7 +29,8 @@ class Form(StatesGroup):
     waiting_for_question = State()
     waiting_for_ans1 = State()
     waiting_for_ans2 = State()
-
+    waiting_for_new_cat_name = State()
+    
 last_clicks = {} # للحذف بلمستين
 selected_members = {} # لتخزين اختيارات الأعضاء مؤقتاً
 
