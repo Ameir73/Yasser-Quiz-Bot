@@ -189,34 +189,31 @@ async def save_edited_category(message: types.Message, state: FSMContext):
     )
 
     await message.answer(txt, reply_markup=kb)
-# --- 3. نظام إضافة سؤال (سؤال -> حذف -> إجابة 1 -> إجابة 2) ---
+# --- 3. نظام إضافة سؤال (إصلاح مشكلة التعليق والحذف المستمر) ---
 @dp.callback_query_handler(lambda c: c.data.startswith('add_q_'))
 async def start_add_question(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     cat_id = c.data.split('_')[-1]
     await state.update_data(current_cat_id=cat_id)
     await Form.waiting_for_question.set()
-    # تعديل نفس الرسالة لطلب السؤال ليبقى الشات نظيفاً
     await c.message.edit_text("❓ **نظام إضافة الأسئلة:**\n\nاكتب الآن السؤال الذي تريد إضافته:")
 
 @dp.message_handler(state=Form.waiting_for_question)
 async def process_q_text(message: types.Message, state: FSMContext):
     await state.update_data(q_content=message.text)
-    try: await message.delete() # حذف رسالة المستخدم (السؤال)
+    try: await message.delete() 
     except: pass
-    
     await Form.waiting_for_ans1.set()
     msg = await message.answer("✅ تم حفظ نص السؤال.\n\nالآن أرسل **الإجابة الصحيحة** الأولى:")
-    await state.update_data(last_bot_msg_id=msg.message_id) # حفظ ID رسالة البوت لحذفها
+    await state.update_data(last_bot_msg_id=msg.message_id)
 
 @dp.message_handler(state=Form.waiting_for_ans1)
 async def process_first_ans(message: types.Message, state: FSMContext):
     data = await state.get_data()
     await state.update_data(ans1=message.text)
-    
     try:
-        await message.delete() # حذف رسالة المستخدم (الجواب 1)
-        await bot.delete_message(message.chat.id, data['last_bot_msg_id']) # حذف رسالة البوت "ارسل الجواب"
+        await message.delete()
+        await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
     except: pass
     
     kb = InlineKeyboardMarkup(row_width=2)
@@ -227,22 +224,20 @@ async def process_first_ans(message: types.Message, state: FSMContext):
     msg = await message.answer("هل تريد إضافة إجابة ثانية (بديلة) لهذا السؤال؟", reply_markup=kb)
     await state.update_data(last_bot_msg_id=msg.message_id)
 
-# --- معالجة اختيار "نعم" إضافة إجابة ثانية ---
+# --- معالجة اختيار "نعم" + استقبال الإجابة الثانية ---
 @dp.callback_query_handler(lambda c: c.data == 'add_second_ans', state='*')
 async def add_second_ans_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
-    await Form.waiting_for_ans2.set() # الانتقال للحالة المفقودة
+    await Form.waiting_for_ans2.set() # تفعيل الحالة الثانية
     await c.message.edit_text("📝 أرسل الآن **الإجابة الثانية** البديلة:")
 
-@dp.message_handler(state=Form.waiting_for_ans2)
+@dp.message_handler(state=Form.waiting_for_ans2) # هذا المعالج هو الذي كان ينقصك
 async def process_second_ans(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    try:
-        await message.delete()
-        await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
+    try: await message.delete() # حذف إجابتك الثانية
     except: pass
     
-    # الحفظ النهائي في Supabase مع إجابتين
+    # الحفظ في Supabase مع إجابتين
     supabase.table("questions").insert({
         "category_id": data['current_cat_id'],
         "question_content": data['q_content'],
@@ -251,9 +246,9 @@ async def process_second_ans(message: types.Message, state: FSMContext):
         "created_by": str(message.from_user.id)
     }).execute()
     
-    await finalize_and_show_menu(message, state, data['current_cat_id'])
+    await finalize_and_stop_deleting(message, state, data['current_cat_id'])
 
-# --- معالجة اختيار "لا" الحفظ بإجابة واحدة ---
+# --- معالجة اختيار "لا" ---
 @dp.callback_query_handler(lambda c: c.data == 'no_second_ans', state='*')
 async def finalize_no_second(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
@@ -266,15 +261,16 @@ async def finalize_no_second(c: types.CallbackQuery, state: FSMContext):
         "created_by": str(c.from_user.id)
     }).execute()
     
-    await c.message.delete()
-    await finalize_and_show_menu(c.message, state, data['current_cat_id'])
+    try: await c.message.delete()
+    except: pass
+    await finalize_and_stop_deleting(c.message, state, data['current_cat_id'])
 
-# دالة مساعدة لإنهاء الحالة والرجوع للوحة
-async def finalize_and_show_menu(message, state, cat_id):
-    await state.finish() # إنهاء الحالة فوراً لكي لا يحذف كلمة "تحكم"
+# الدالة السحرية التي تنهي الحالة وتظهر الزر
+async def finalize_and_stop_deleting(message_obj, state, cat_id):
+    await state.finish() # إيقاف الحالة فوراً (لن يحذف رسائلك بعدها)
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("⚙️ العودة للوحة إعدادات القسم", callback_data=f"manage_questions_{cat_id}"))
-    await message.answer("✅ تم إضافة السؤال بنجاح!", reply_markup=kb)
+    await bot.send_message(message_obj.chat.id, "✅ تم إضافة السؤال والاجابات بنجاح!", reply_markup=kb)
     
 # --- 2. حذف القسم مع التأكيد ---
 @dp.callback_query_handler(lambda c: c.data.startswith('confirm_del_cat_'))
