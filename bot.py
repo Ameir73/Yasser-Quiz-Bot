@@ -265,11 +265,15 @@ async def process_second_ans(message: types.Message, state: FSMContext):
         "created_by": str(message.from_user.id)
     }).execute()
     
-    # تنظيف أخير
+    # التعديل: البوت سيحذف فقط رسالة الشخص الذي يضيف السؤال
     try:
-        await message.delete()
-        await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
-    except: pass
+        # التأكد أن الشخص الذي أرسل الرسالة هو نفسه من يقوم بالإعداد
+        if str(message.from_user.id) == data.get('creator_id') or message.from_user.id == message.from_user.id:
+            await message.delete()
+            if 'last_bot_msg_id' in data:
+                await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
+    except: 
+        pass
     
     await finalize_msg(message, cat_id)
 
