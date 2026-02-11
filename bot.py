@@ -10,7 +10,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
 # --- البيانات الخاصة بياسر ---
-API_TOKEN = '7948017595:AAFxVRl9i3eJ1taRbD7W2PZqxzqTMgWb7ho'
+API_TOKEN = '7948017595:AAGfcem-UyxilXhHTYttvhWLnwoymBtRTgI'
 SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubGNidGd6ZHhzYWN3amlwZ2duIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3NDMzMiwiZXhwIjoyMDg2MTUwMzMyfQ.v3SRkONLNlQw5LWhjo03u0fDce3EvWGBpJ02OGg5DEI"
 OWNER_USERNAME = "@Ya_79k"
@@ -144,7 +144,6 @@ async def edit_category_start(c: types.CallbackQuery, state: FSMContext):
     # هنا السر: نقوم بتعديل نفس الرسالة بدلاً من إرسال رسالة جديدة
     await c.message.edit_text("📝 **نظام التعديل:**\n\nأرسل الآن الاسم الجديد للقسم:")
     
-
 # --- 1. تعديل اسم القسم المطور (مع حذف الرسالة والرجوع التلقائي) ---
 @dp.message_handler(state=Form.waiting_for_new_cat_name)
 async def save_edited_category(message: types.Message, state: FSMContext):
