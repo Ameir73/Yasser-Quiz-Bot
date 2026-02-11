@@ -189,7 +189,66 @@ async def save_edited_category(message: types.Message, state: FSMContext):
     )
 
     await message.answer(txt, reply_markup=kb)
+# --- 3. نظام إضافة سؤال مباشر (تعديل الرسالة وحذف المدخلات) ---
+@dp.callback_query_handler(lambda c: c.data.startswith('add_q_'))
+async def start_add_question(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    cat_id = c.data.split('_')[-1]
+    await state.update_data(current_cat_id=cat_id)
+    await Form.waiting_for_question.set()
+    
+    # تعديل الرسالة الحالية لإخفاء الأزرار وطلب السؤال
+    await c.message.edit_text("❓ **نظام إضافة الأسئلة:**\n\nاكتب الآن السؤال الذي تريد إضافته في هذا القسم:")
 
+@dp.message_handler(state=Form.waiting_for_question)
+async def process_q_text(message: types.Message, state: FSMContext):
+    await state.update_data(q_content=message.text)
+    # حذف رسالة المستخدم (السؤال) ليبقى الشات نظيفاً
+    try: await message.delete() 
+    except: pass
+    
+    await Form.waiting_for_ans1.set()
+    await message.answer("✅ تم حفظ نص السؤال.\n\nالآن أرسل **الإجابة الصحيحة** لهذا السؤال:")
+
+@dp.message_handler(state=Form.waiting_for_ans1)
+async def process_first_ans(message: types.Message, state: FSMContext):
+    await state.update_data(ans1=message.text)
+    # حذف رسالة المستخدم (الإجابة)
+    try: await message.delete()
+    except: pass
+    
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("✅ نعم، إضافة ثانية", callback_data="add_second_ans"),
+        InlineKeyboardButton("❌ لا، إجابة واحدة فقط", callback_data="no_second_ans")
+    )
+    await message.answer("هل تريد إضافة إجابة ثانية (بديلة) لهذا السؤال؟", reply_markup=kb)
+
+# --- 4. معالجة اختيار (لا) والحفظ النهائي ---
+@dp.callback_query_handler(lambda c: c.data == 'no_second_ans', state='*')
+async def finalize_q_one_ans(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    data = await state.get_data()
+    cat_id = data.get('current_cat_id')
+    
+    # الحفظ في Supabase
+    supabase.table("questions").insert({
+        "category_id": cat_id,
+        "question_content": data['q_content'],
+        "correct_answer": data['ans1'],
+        "created_by": str(c.from_user.id)
+    }).execute()
+    
+    # حذف الرسالة التي فيها زر نعم/لا لترتيب الشات
+    await c.message.delete()
+    await c.message.answer("✅ تم إضافة السؤال بنجاح!")
+    await state.finish()
+    
+    # استدعاء دالة manage_questions_window لعرض اللوحة المحدثة فوراً
+    from aiogram.types import CallbackQuery
+    mock_call = CallbackQuery(id="0", from_user=c.from_user, chat_instance="0", message=c.message, data=f"manage_questions_{cat_id}")
+    await manage_questions_window(mock_call)
+    
 # --- 2. حذف القسم مع التأكيد ---
 @dp.callback_query_handler(lambda c: c.data.startswith('confirm_del_cat_'))
 async def confirm_delete_cat(c: types.CallbackQuery):
