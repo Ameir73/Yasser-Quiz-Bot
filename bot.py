@@ -196,5 +196,9 @@ async def close_msg(c: types.CallbackQuery):
     await c.message.delete()
 
 if __name__ == '__main__':
+    # إعداد السجلات (Logging) لمراقبة الأخطاء في Render
+    logging.basicConfig(level=logging.INFO)
+    print(f"🚀 البوت @Ya_79kbot بدأ العمل على نسخة متوافقة...")
     executor.start_polling(dp, skip_updates=True)
+    
     
