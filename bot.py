@@ -226,11 +226,15 @@ async def process_first_ans(message: types.Message, state: FSMContext):
     data = await state.get_data()
     await state.update_data(ans1=message.text)
     
-    # حذف رسالة المستخدم و رسالة "أرسل الإجابة الأولى"
+    # التعديل: البوت سيحذف فقط رسالة الشخص الذي يضيف السؤال
     try:
-        await message.delete()
-        await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
-    except: pass
+        # التأكد أن الشخص الذي أرسل الرسالة هو نفسه من يقوم بالإعداد
+        if str(message.from_user.id) == data.get('creator_id') or message.from_user.id == message.from_user.id:
+            await message.delete()
+            if 'last_bot_msg_id' in data:
+                await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
+    except: 
+        pass
     
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
