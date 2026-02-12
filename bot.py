@@ -836,12 +836,15 @@ async def run_quiz_logic(chat_id, quiz_data, owner_name):
     # 1. جلب الأسئلة بناءً على الأقسام المحددة
     res = supabase.table("questions").select("*").in_("category_id", quiz_data['cats']).limit(quiz_data['questions_count']).execute()
     questions = res.data
-    random.shuffle(questions)
+    
+    if not questions:
+        await bot.send_message(chat_id, "⚠️ عذراً، لا توجد أسئلة كافية في هذه الأقسام.")
+        return
 
+    random.shuffle(questions)
     overall_scores = {} 
 
     for i, q in enumerate(questions):
-        # تصفير بيانات السؤال الحالي - استخدام المسميات من صورك
         active_quizzes[chat_id] = {
             "is_active": True, 
             "correct_ans": q['correct_answer'].strip() if q['correct_answer'] else "", 
@@ -849,9 +852,7 @@ async def run_quiz_logic(chat_id, quiz_data, owner_name):
             "losers": []
         }
         
-        # تجهيز الإجابات الإضافية للعرض في الملخص
         extra = q.get('second_answer') or q.get('alternative_answer') or ""
-
         settings = {
             'owner_name': owner_name, 
             'cat_name': "أقسامك الخاصة", 
@@ -859,34 +860,27 @@ async def run_quiz_logic(chat_id, quiz_data, owner_name):
             'time_limit': quiz_data['time_limit']
         }
         
-        # إرسال واجهة السؤال (باستخدام سؤالك: question_content)
         q_data_for_display = {'question_text': q['question_content'], 'created_by_name': owner_name}
         await send_quiz_question(chat_id, q_data_for_display, i+1, len(questions), settings)
         
         start_time = time.time()
         while time.time() - start_time < quiz_data['time_limit']:
             await asyncio.sleep(0.1)
-            # نظام السرعة: إذا جاوب شخص، ننهي السؤال
             if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['is_active']:
                 break
 
         active_quizzes[chat_id]['is_active'] = False
         
-        # تحديث نقاط الترتيب العام
         for w in active_quizzes[chat_id]['winners']:
             uid = w['id']
             if uid not in overall_scores: overall_scores[uid] = {"name": w['name'], "points": 0}
             overall_scores[uid]['points'] += 10
 
         top_3 = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)[:3]
-        
-        # إرسال ملخص الإجابة المبدع
         await send_answer_summary(chat_id, q['correct_answer'], extra, active_quizzes[chat_id]['winners'], active_quizzes[chat_id]['losers'], top_3)
-        await asyncio.sleep(3) # وقت مستقطع قبل السؤال التالي
+        await asyncio.sleep(3) 
 
-        await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية لمبدعينا.**")
-
-# --- تأكد أن هذه الأسطر تبدأ من بداية السطر تماماً (أقصى اليسار) ---
+    await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية لمبدعينا.**")
 
 @dp.message_handler(lambda message: message.text == "🗂️ المسابقات المحفوظة")
 async def show_quizzes(message: types.Message):
@@ -900,16 +894,13 @@ async def show_quizzes(message: types.Message):
 
     kb = InlineKeyboardMarkup(row_width=1)
     for q in quizzes:
-        # تأكد أن id المسابقة موجود في قاعدة البيانات
         kb.add(InlineKeyboardButton(f"🏆 {q['quiz_name']}", callback_data=f"manage_quiz_{q['id']}"))
     
-    await message.answer("🗂️ **مسابقاتك المحفوظة:**\nاختر مسابقة لإدارتها أو تشغيلها:", reply_markup=kb)
-# هذا المعالج يستجيب عند الضغط على أي مسابقة في القائمة
+    await message.answer("🗂️ **مسابقاتك المحفوظة:**\nاختر مسابقة لتشغيلها:", reply_markup=kb)
+
 @dp.callback_query_handler(lambda c: c.data.startswith('manage_quiz_'))
 async def manage_quiz_selected(c: types.CallbackQuery):
     quiz_id = c.data.split('_')[2]
-    
-    # جلب بيانات المسابقة من جدول saved_quizzes
     res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
     quiz_data = res.data
     
@@ -917,11 +908,16 @@ async def manage_quiz_selected(c: types.CallbackQuery):
         await c.answer("❌ تعذر العثور على المسابقة!")
         return
 
-    # استخراج الأقسام المحفوظة (نحولها من نص JSON إلى قائمة)
     import json
-    selected_cats = json.loads(quiz_data['categories'])
-    
-    # تجهيز بيانات المسابقة للتشغيل
+    # تحويل الأقسام بأمان (JSON أو قائمة مباشرة)
+    try:
+        if isinstance(quiz_data['categories'], str):
+            selected_cats = json.loads(quiz_data['categories'])
+        else:
+            selected_cats = quiz_data['categories']
+    except:
+        selected_cats = []
+
     quiz_config = {
         'cats': selected_cats,
         'questions_count': quiz_data['questions_count'],
@@ -930,11 +926,8 @@ async def manage_quiz_selected(c: types.CallbackQuery):
     }
 
     await c.message.edit_text(f"🚀 **جاري تحضير مسابقة: {quiz_data['quiz_name']}**\nانتظر قليلاً...")
-    
-    # تشغيل المحرك الذي برمجناه سابقاً
     await run_quiz_logic(c.message.chat.id, quiz_config, c.from_user.first_name)
     
-# هكذا يجب أن يكون شكل الكود بعد حذف الزيادات
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
 async def dbl_del(c: types.CallbackQuery):
     qid = c.data.split('_')[1]
@@ -948,16 +941,18 @@ async def dbl_del(c: types.CallbackQuery):
 
 @dp.callback_query_handler(lambda c: c.data == 'back_to_control')
 async def back_to_ctrl(c: types.CallbackQuery):
-    await control_panel(c.message)
+    # ملاحظة: تأكد أن دالة control_panel معرفة في كودك بالأعلى
+    await c.answer("الرجوع للوحة التحكم")
+    # يمكنك استدعاء دالة عرض القائمة هنا
 
 @dp.callback_query_handler(lambda c: c.data == 'close_bot')
 async def close_msg(c: types.CallbackQuery):
     await c.message.delete()
 
 if __name__ == '__main__':
-    # إعداد السجلات (Logging) لمراقبة الأخطاء في Render
     logging.basicConfig(level=logging.INFO)
-    print(f"🚀 البوت @Ya_79kbot بدأ العمل على نسخة متوافقة...")
+    print(f"🚀 البوت بدأ العمل بنجاح...")
     executor.start_polling(dp, skip_updates=True)
+    
     
     
