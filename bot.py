@@ -595,12 +595,83 @@ async def toggle_category_selection(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     await render_categories_list(c.message, eligible, selected)
 
-# --- 8. الانتقال إلى لوحة إعدادات المسابقة (زر تم النهائي) ---
+# --- السطر 559: بداية لوحة إعدادات المسابقة الاحترافية ---
 @dp.callback_query_handler(lambda c: c.data == "final_quiz_settings", state="*")
 async def final_quiz_settings_panel(c: types.CallbackQuery, state: FSMContext):
-    await c.answer("⚙️ جاري فتح لوحة الإعدادات...")
-    # هنا سنعرض واجهة (الوقت وعدد الأسئلة) في الخطوة القادمة
-    await c.message.edit_text("🎮 **لوحة إعدادات أسئلة المسابقة**\n\n(هنا سيتم ضبط التوقيت وعدد الأسئلة والبدء قريباً)")
+    await c.answer()
+    data = await state.get_data()
+    
+    # جلب القيم أو وضع قيم افتراضية
+    q_time = data.get('quiz_time', 15)
+    q_count = data.get('quiz_count', 10)
+    q_mode = data.get('quiz_mode', 'السرعة ⚡')
+    # تحديد نوع القسم بناءً على الاختيار السابق
+    q_type = "خاص 👤" if data.get('selected_members') == [str(c.from_user.id)] else "عام 👥"
+
+    # شاشة الرسالة المزخرفة فوق الأزرار
+    text = (
+        "أهلاً بك في \n"
+        "┏━━━━━لوحة اعدادات المسابقه━━━━━┓\n"
+        f"📌 عدد الاسئلة: {q_count} 📍\n"
+        f"📁 نوع القسم: {q_type}\n"
+        f"🔖 نظام الإجابة: {q_mode}\n"
+        f"⏳ المهلة: {q_time} ثانية\n"
+        "┗━━━━━━━━━━━━━━━━━━━━┛"
+    )
+
+    kb = InlineKeyboardMarkup(row_width=3)
+    
+    # أزرار اختيار العدد (تفاعلية)
+    kb.row(InlineKeyboardButton(f"📊 اختر عدد الأسئلة:", callback_data="ignore"))
+    kb.row(
+        InlineKeyboardButton(f"{'✅ ' if q_count==10 else ''}10", callback_data="set_count_10"),
+        InlineKeyboardButton(f"{'✅ ' if q_count==20 else ''}20", callback_data="set_count_20"),
+        InlineKeyboardButton(f"{'✅ ' if q_count==30 else ''}30", callback_data="set_count_30")
+    )
+
+    # زر الثواني (يتغير في نفس الزر عند الضغط)
+    kb.row(InlineKeyboardButton(f"⏱️ المهلة: {q_time} ثانية", callback_data="cycle_time"))
+
+    # نظام الإجابة والأقسام
+    kb.row(
+        InlineKeyboardButton(f"🔖 النظام: {q_mode}", callback_data="cycle_mode"),
+        InlineKeyboardButton("⚙️ الأقسام الرسمية (قيد التطوير)", callback_data="bot_dev_msg")
+    )
+
+    # أزرار الحفظ والإغلاق
+    kb.row(InlineKeyboardButton("💾 حفظ المسابقة الآن", callback_data="save_quiz_process"))
+    kb.row(InlineKeyboardButton("❌ إغلاق النافذة", callback_data="close_window"))
+
+    try:
+        await c.message.edit_text(text, reply_markup=kb)
+    except:
+        pass
+
+# --- محركات التغيير التفاعلية (توضع تحتها مباشرة) ---
+
+@dp.callback_query_handler(lambda c: c.data == "cycle_time", state="*")
+async def cycle_time(c: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    current = data.get('quiz_time', 15)
+    # 15 -> 20 -> 30 -> 45 -> 15
+    next_time = 20 if current == 15 else (30 if current == 20 else (45 if current == 30 else 15))
+    await state.update_data(quiz_time=next_time)
+    await final_quiz_settings_panel(c, state)
+
+@dp.callback_query_handler(lambda c: c.data.startswith('set_count_'), state="*")
+async def set_count_direct(c: types.CallbackQuery, state: FSMContext):
+    new_count = int(c.data.split('_')[-1])
+    await state.update_data(quiz_count=new_count)
+    await final_quiz_settings_panel(c, state)
+
+@dp.callback_query_handler(lambda c: c.data == "cycle_mode", state="*")
+async def cycle_mode(c: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    current = data.get('quiz_mode', 'السرعة ⚡')
+    next_mode = 'الوقت الكامل ⏳' if current == 'السرعة ⚡' else 'السرعة ⚡'
+    await state.update_data(quiz_mode=next_mode)
+    await final_quiz_settings_panel(c, state)
+    
 # --- الحذف بلمستين ---
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
 async def dbl_del(c: types.CallbackQuery):
