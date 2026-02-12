@@ -766,79 +766,106 @@ async def handle_secure(c: types.CallbackQuery):
         logging.error(f"Error in handle_secure: {e}")
 
 # ==========================================
-# 2. محركات التصميم (العد والسؤال)
+# 1. محركات التصميم والزخرفة (من السطر 768)
 # ==========================================
 async def countdown_timer(message: types.Message, seconds=5):
+    """دالة العد التنازلي لإصلاح التوقف عند رقم 1"""
     try:
         for i in range(seconds, 0, -1):
             await message.edit_text(f"🚀 **تجهيز المسابقة...**\n\nستبدأ خلال: {i}")
             await asyncio.sleep(1)
-    except: pass
+    except Exception as e:
+        logging.error(f"Countdown Error: {e}")
 
 async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
+    """واجهة السؤال بزخرفة كودك القديم"""
     text = (
-        f"🎓 المنظم: {settings['owner_name']}\n"
-        f"📌 السؤال: « {current_num} » من « {total_num} »\n"
-        f"⏳ المهلة: {settings['time_limit']} ثانية\n"
-        "━━━━━━━━━━━━━━\n"
-        f"❓ السؤال:\n« {q_data['question_text']} »"
+        f"🎓 **الـمنـظـم:** {settings['owner_name']} ☁️☁️\n"
+        f"┏━━━━━━━━━━━━━━┓\n"
+        f"  📌 **سؤال:** « {current_num} » من « {total_num} » 📍\n"
+        f"  📁 **قسم:** {settings['cat_name']} 📂\n"
+        f"  🚀 **سرعة:** {settings['mode']} 🚀\n"
+        f"  ⏳ **المهلة:** {settings['time_limit']} ثانية ⏳\n"
+        f"┗━━━━━━━━━━━━━━┛\n\n"
+        f"❓ **السؤال:**\n**{q_data['question_text']}**"
     )
-    return await bot.send_message(chat_id, text)
+    return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
 # ==========================================
-# 3. محرك الأسئلة الفعلي (Engine)
+# 2. محرك تشغيل المسابقة (المنطق القديم الناجح)
 # ==========================================
 active_quizzes = {}
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # جلب الأسئلة من سوبابيس
-        res = supabase.table("questions").select("*").in_("category_id", quiz_data['cats']).limit(quiz_data['questions_count']).execute()
+        # السر القديم: الربط مع جدول الأقسام categories
+        res = supabase.table("questions") \
+            .select("*, categories(name)") \
+            .in_("category_id", quiz_data['cats']) \
+            .limit(quiz_data['questions_count']) \
+            .execute()
+        
         questions = res.data
         if not questions:
-            await bot.send_message(chat_id, "⚠️ الأقسام المختارة فارغة!")
+            await bot.send_message(chat_id, "⚠️ لم أجد أسئلة في هذه الأقسام!")
             return
 
         random.shuffle(questions)
-        scores = {}
+        overall_scores = {}
 
         for i, q in enumerate(questions):
+            # استخدام question_content كما في قاعدة بياناتك
+            q_text = q.get('question_content', 'نص مفقود')
+            cat_name = q.get('categories', {}).get('name', 'عام')
             ans = q.get('correct_answer') or q.get('answer_text') or ""
-            active_quizzes[chat_id] = {"active": True, "ans": str(ans).strip(), "winners": [], "mode": quiz_data['mode']}
+
+            active_quizzes[chat_id] = {
+                "active": True, "ans": str(ans).strip(), 
+                "winners": [], "mode": quiz_data['mode']
+            }
             
-            await send_quiz_question(chat_id, {'question_text': q['question_content']}, i+1, len(questions), 
-                                   {'owner_name': owner_name, 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit']})
+            settings = {
+                'owner_name': owner_name, 'mode': quiz_data['mode'], 
+                'time_limit': quiz_data['time_limit'], 'cat_name': cat_name
+            }
             
-            start = time.time()
-            while time.time() - start < quiz_data['time_limit']:
+            # إرسال السؤال بالواجهة المزخرفة
+            await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
+            
+            # نظام المؤقت الذكي
+            start_time = time.time()
+            while time.time() - start_time < quiz_data['time_limit']:
                 await asyncio.sleep(0.1)
-                if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']: break
+                if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
+                    break
 
             active_quizzes[chat_id]['active'] = False
+            
             # حساب النقاط (10 لكل فائز)
             for w in active_quizzes[chat_id]['winners']:
-                scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
+                overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
 
-            # إرسال ملخص بسيط للسؤال
-            await bot.send_message(chat_id, f"✅ الإجابة الصحيحة كانت: {ans}")
-            await asyncio.sleep(2)
+            # إرسال ملخص السؤال (اختياري يمكنك إضافة دالة الملخص هنا)
+            await bot.send_message(chat_id, f"✅ الإجابة الصحيحة: {ans}")
+            await asyncio.sleep(3)
 
-        await bot.send_message(chat_id, "🏁 **انتهت المسابقة بنجاح!**")
+        await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية للفائزين.**")
     except Exception as e:
         logging.error(f"Engine Error: {e}")
 
 # ==========================================
-# 4. رصد الإجابات وتشغيل البوت
+# 3. رصد الإجابات وبدء التشغيل
 # ==========================================
 @dp.message_handler(lambda m: not m.text.startswith('/'))
-async def on_user_answer(m: types.Message):
+async def check_ans(m: types.Message):
     cid = m.chat.id
     if cid in active_quizzes and active_quizzes[cid]['active']:
         if m.text.strip() == active_quizzes[cid]['ans']:
             if not any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners']):
-                active_quizzes[cid].setdefault('winners', []).append({"name": m.from_user.first_name, "id": m.from_user.id})
-                if active_quizzes[cid]['mode'] == 'السرعة ⚡': active_quizzes[cid]['active'] = False
+                active_quizzes[cid]['winners'].append({"name": m.from_user.first_name, "id": m.from_user.id})
+                if active_quizzes[cid]['mode'] == 'السرعة ⚡':
+                    active_quizzes[cid]['active'] = False
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
-                
+            
