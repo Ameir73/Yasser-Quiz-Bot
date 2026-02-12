@@ -506,7 +506,8 @@ async def render_members_list(message, eligible_ids, selected_list):
     for m_id in eligible_ids:
         status = "✅ " if m_id in selected_list else ""
         # إظهار "المبدع" مع آخر 6 أرقام من هويته
-        kb.insert(InlineKeyboardButton(f"{status}المبدع: {m_id[-6:]}", callback_data=f"toggle_mem_{m_id}"))
+        kb.insert(InlineKeyboardButton(f"{status} المبدع: {str(m_id)[-6:]}", callback_data=f"toggle_mem_{m_id}"))
+        
     
     # زر الانتقال للمرحلة التالية (سحب الأقسام)
     if selected_list:
