@@ -815,7 +815,24 @@ async def run_quiz_logic(chat_id, quiz_data, owner_name):
         await asyncio.sleep(3)
 
     await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية لكل المبدعين.**")
+    # --- 3. محرك رصد الإجابات الذكي ---
+@dp.message_handler(lambda message: not message.text.startswith('/'))
+async def check_answers(message: types.Message):
+    chat_id = message.chat.id
+    if chat_id not in active_quizzes or not active_quizzes[chat_id]['is_active']:
+        return
+
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name
+    user_answer = message.text.strip()
     
+    if user_answer == active_quizzes[chat_id]['correct_ans']:
+        active_quizzes[chat_id]['is_active'] = False
+        active_quizzes[chat_id]['winners'].append({"name": user_name, "id": user_id})
+    else:
+        if not any(l['id'] == user_id for l in active_quizzes[chat_id]['losers']):
+            active_quizzes[chat_id]['losers'].append({"name": user_name, "id": user_id})
+            
 # --- الحذف بلمستين ---
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
 async def dbl_del(c: types.CallbackQuery):
