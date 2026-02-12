@@ -798,61 +798,71 @@ active_quizzes = {}
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # السر القديم: الربط مع جدول الأقسام categories
+        # ضمان تحويل الأقسام لأرقام لضمان جلبها من Supabase
+        cat_list = [int(c) for c in quiz_data['cats']]
+        
+        # 1. جلب الأسئلة مع ربط اسم القسم (السر القديم)
         res = supabase.table("questions") \
             .select("*, categories(name)") \
-            .in_("category_id", quiz_data['cats']) \
-            .limit(quiz_data['questions_count']) \
+            .in_("category_id", cat_list) \
+            .limit(int(quiz_data['questions_count'])) \
             .execute()
         
         questions = res.data
         if not questions:
-            await bot.send_message(chat_id, "⚠️ لم أجد أسئلة في هذه الأقسام!")
+            await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة في الأقسام المختارة: {cat_list}")
             return
 
         random.shuffle(questions)
         overall_scores = {}
 
         for i, q in enumerate(questions):
-            # استخدام question_content كما في قاعدة بياناتك
+            # استخدام question_content بناءً على صورك في سوبابيس
             q_text = q.get('question_content', 'نص مفقود')
+            # جلب اسم القسم من الربط categories
             cat_name = q.get('categories', {}).get('name', 'عام')
+            # جلب الإجابة الصحيحة
             ans = q.get('correct_answer') or q.get('answer_text') or ""
 
             active_quizzes[chat_id] = {
-                "active": True, "ans": str(ans).strip(), 
-                "winners": [], "mode": quiz_data['mode']
+                "active": True, 
+                "ans": str(ans).strip(), 
+                "winners": [], 
+                "mode": quiz_data['mode']
             }
             
             settings = {
-                'owner_name': owner_name, 'mode': quiz_data['mode'], 
-                'time_limit': quiz_data['time_limit'], 'cat_name': cat_name
+                'owner_name': owner_name, 
+                'mode': quiz_data['mode'], 
+                'time_limit': quiz_data['time_limit'],
+                'cat_name': cat_name
             }
             
-            # إرسال السؤال بالواجهة المزخرفة
+            # 2. إرسال السؤال بالواجهة المزخرفة
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
-            # نظام المؤقت الذكي
+            # 3. نظام المؤقت الذكي
             start_time = time.time()
-            while time.time() - start_time < quiz_data['time_limit']:
+            while time.time() - start_time < int(quiz_data['time_limit']):
                 await asyncio.sleep(0.1)
                 if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
                     break
 
             active_quizzes[chat_id]['active'] = False
             
-            # حساب النقاط (10 لكل فائز)
+            # حساب النقاط
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
 
-            # إرسال ملخص السؤال (اختياري يمكنك إضافة دالة الملخص هنا)
-            await bot.send_message(chat_id, f"✅ الإجابة الصحيحة: {ans}")
-            await asyncio.sleep(3)
+            await bot.send_message(chat_id, f"✅ الإجابة الصحيحة هي: **{ans}**")
+            await asyncio.sleep(2)
 
-        await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية للفائزين.**")
+        await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية لمبدعينا.**")
+        
     except Exception as e:
         logging.error(f"Engine Error: {e}")
-
+        await bot.send_message(chat_id, f"❌ خطأ في المحرك: {e}")
+            
 # ==========================================
 # 3. رصد الإجابات وبدء التشغيل
 # ==========================================
