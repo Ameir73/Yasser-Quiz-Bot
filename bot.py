@@ -832,7 +832,7 @@ async def check_answers(message: types.Message):
     else:
         if not any(l['id'] == user_id for l in active_quizzes[chat_id]['losers']):
             active_quizzes[chat_id]['losers'].append({"name": user_name, "id": user_id})
-            async def run_quiz_logic(chat_id, quiz_data, owner_name):
+async def run_quiz_logic(chat_id, quiz_data, owner_name):
     # 1. جلب الأسئلة بناءً على الأقسام المحددة
     res = supabase.table("questions").select("*").in_("category_id", quiz_data['cats']).limit(quiz_data['questions_count']).execute()
     questions = res.data
