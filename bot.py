@@ -698,7 +698,7 @@ async def process_quiz_name(message: types.Message, state: FSMContext):
     
     await message.answer(f"✅ **تم حفظ المسابقة ({quiz_name}) بنجاح!**\n\n🚀 لتشغيلها في أي وقت، أرسل كلمة: **مسابقة**")
     await state.finish()
-    @dp.message_handler(lambda message: message.text == "مسابقة")
+@dp.message_handler(lambda message: message.text == "مسابقة")
 async def show_quizzes(message: types.Message):
     u_id = str(message.from_user.id)
     res = supabase.table("saved_quizzes").select("*").eq("created_by", u_id).execute()
@@ -884,7 +884,31 @@ async def check_answers(message: types.Message):
         await send_answer_summary(chat_id, q['correct_answer'], extra, active_quizzes[chat_id]['winners'], active_quizzes[chat_id]['losers'], top_3)
         await asyncio.sleep(3) # وقت مستقطع قبل السؤال التالي
 
-    await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية لمبدعينا.**")
+        await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية لمبدعينا.**")
+
+# --- تأكد أن هذه الأسطر تبدأ من بداية السطر تماماً (أقصى اليسار) ---
+
+@dp.message_handler(lambda message: message.text == "🗂️ المسابقات المحفوظة")
+async def show_quizzes(message: types.Message):
+    user_id = str(message.from_user.id)
+    res = supabase.table("saved_quizzes").select("*").eq("created_by", user_id).execute()
+    quizzes = res.data
+    
+    if not quizzes:
+        await message.answer("❌ ليس لديك مسابقات محفوظة حالياً.")
+        return
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    for q in quizzes:
+        # تأكد أن id المسابقة موجود في قاعدة البيانات
+        kb.add(InlineKeyboardButton(f"🏆 {q['quiz_name']}", callback_data=f"manage_quiz_{q['id']}"))
+    
+    await message.answer("🗂️ **مسابقاتك المحفوظة:**\nاختر مسابقة لإدارتها أو تشغيلها:", reply_markup=kb)
+
+# --- الحذف بلمستين (تأكد أنها أيضاً ملتصقة باليسار) ---
+@dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
+async def dbl_del(c: types.CallbackQuery):
+    
     
 # --- الحذف بلمستين ---
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
