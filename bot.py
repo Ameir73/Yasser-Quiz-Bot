@@ -729,6 +729,58 @@ async def handle_secure(c: types.CallbackQuery):
         await c.message.delete()
     else:
         await c.answer("🚀 جارٍ إطلاق المسابقة.. استعد!")
+    # --- 1. محركات التصميم والزخرفة ---
+async def countdown_timer(message: types.Message, seconds=5):
+    text = "🚀 **تجهيز المسابقة...**\n\nستبدأ المسابقة خلال: {}"
+    msg = await message.answer(text.format(seconds))
+    for i in range(seconds - 1, 0, -1):
+        await asyncio.sleep(1)
+        await msg.edit_text(text.format(i))
+    await asyncio.sleep(1)
+    await msg.delete()
+
+async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
+    text = (
+        "═════════════════════\n"
+        f"🎓 الـمنـظـم: {settings['owner_name']}\n"
+        "┏━━━━━━━━━━━━━━━━━━━━┓\n"
+        f"📌 السؤال: « {current_num} » من « {total_num} » 📍\n"
+        f"📁 نوع القسم: {settings['cat_name']}\n"
+        f"🚀 نظام الإجابة: {settings['mode']}\n"
+        f"⏳ المهلة: {settings['time_limit']} ثانية\n"
+        f"✍️ الكاتب: {q_data.get('created_by_name', 'مبدع مجهول')}\n"
+        "┗━━━━━━━━━━━━━━━━━━━━┛\n"
+        "  ╔════════════════════╗\n"
+        "    ❓ السؤال هو :\n"
+        f"« {q_data['question_text']} »\n\n"
+        "══════════════════════"
+    )
+    return await bot.send_message(chat_id, text)
+
+async def send_answer_summary(chat_id, correct_ans, extra_ans, winners, losers, overall_rank):
+    winners_list = "\n".join([f"{i+1}- {w['name']} (+10)" for i, w in enumerate(winners)]) if winners else "لا يوجد"
+    losers_list = "\n".join([f"{i+1}- {l['name']}" for i, l in enumerate(losers)]) if losers else "لا يوجد"
+    
+    ranks = ["🥇", "🥈", "🥉"]
+    rank_text = ""
+    for i, user in enumerate(overall_rank[:3]):
+        rank_text += f"{ranks[i]} {user['name']} - {user['points']} نقطة\n"
+
+    text = (
+        f"✅ الإجابة الصحيحة: {correct_ans}\n"
+        f"➕ إجابة إضافية: {extra_ans if extra_ans else 'لا يوجد'}\n"
+        "━━━━━━━━━━━━━━\n"
+        "╭─── قائمة المبدعين (صح) ✅ ───╮\n"
+        f"{winners_list}\n"
+        "╰──────────────────╯\n"
+        "╭─── المحاولات القادمة (خطأ) ❌ ───╮\n"
+        f"{losers_list}\n"
+        "╰──────────────────╯\n"
+        "╭─── الترتيب العام للمسابقة 📊 ───╮\n"
+        f"{rank_text if rank_text else 'لا يوجد نقاط بعد'}"
+        "╰──────────────────╯"
+    )
+    await bot.send_message(chat_id, text)
     
 # --- الحذف بلمستين ---
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
