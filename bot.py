@@ -728,6 +728,8 @@ async def handle_secure(c: types.CallbackQuery):
     if "close" in c.data:
         await c.message.delete()
     else:
+        await c.answer("🚀 جارٍ إطلاق المسابقة.. استعد!")
+        
                 # --- 1. محركات التصميم والزخرفة ---
 async def countdown_timer(message: types.Message, seconds=5):
     text = "🚀 **تجهيز المسابقة...**\n\nستبدأ المسابقة خلال: {}"
