@@ -737,7 +737,7 @@ async def handle_secure(c: types.CallbackQuery):
         await c.answer("🚀 استعد.. بدأت الإثارة!")
         quiz_id = data_parts[1]
         
-        # جلب البيانات
+        # جلب البيانات من Supabase
         res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
         q_data = res.data
         
@@ -748,9 +748,8 @@ async def handle_secure(c: types.CallbackQuery):
         # تشغيل العد التنازلي
         await countdown_timer(c.message, 5)
         
-        # --- الفحص المرن للأقسام (هنا حل مشكلة 'categories') ---
+        # --- استخراج الأقسام بمرونة تامة ---
         import json
-        # نحاول جلب البيانات من categories أو cats أو نضع قائمة فارغة
         raw_cats = q_data.get('categories') or q_data.get('cats') or []
         
         try:
@@ -761,6 +760,7 @@ async def handle_secure(c: types.CallbackQuery):
         except:
             cats = raw_cats
 
+        # تجهيز الإعدادات للمحرك
         quiz_config = {
             'cats': cats if isinstance(cats, list) else [cats],
             'questions_count': int(q_data.get('questions_count', 10)),
@@ -775,14 +775,12 @@ async def handle_secure(c: types.CallbackQuery):
             
     except Exception as e:
         logging.error(f"Error in handle_secure: {e}")
-        # إذا حدث خطأ سيخبرك البوت فوراً في الشات بدلاً من التوقف
-        await c.message.reply(f"⚠️ تنبيه: {e}")
-        
+        await c.message.reply(f"⚠️ تنبيه فني: {e}")
+
 # ==========================================
-# 1. محركات التصميم والزخرفة (من السطر 768)
+# 2. محركات التصميم والزخرفة
 # ==========================================
 async def countdown_timer(message: types.Message, seconds=5):
-    """دالة العد التنازلي لإصلاح التوقف عند رقم 1"""
     try:
         for i in range(seconds, 0, -1):
             await message.edit_text(f"🚀 **تجهيز المسابقة...**\n\nستبدأ خلال: {i}")
@@ -791,7 +789,6 @@ async def countdown_timer(message: types.Message, seconds=5):
         logging.error(f"Countdown Error: {e}")
 
 async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
-    """واجهة السؤال بزخرفة كودك القديم"""
     text = (
         f"🎓 **الـمنـظـم:** {settings['owner_name']} ☁️☁️\n"
         f"┏━━━━━━━━━━━━━━┓\n"
@@ -805,36 +802,37 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
 # ==========================================
-# 2. محرك تشغيل المسابقة (المنطق القديم الناجح)
+# 3. محرك تشغيل المسابقة (حل مشكلة تداخل الأقسام)
 # ==========================================
 active_quizzes = {}
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # ضمان تحويل الأقسام لأرقام لضمان جلبها من Supabase
-        cat_list = [int(c) for c in quiz_data['cats']]
+        # ضمان تحويل الأقسام لأرقام صحيحة لتصفية النتائج بدقة
+        cat_ids = [int(c) for c in quiz_data['cats'] if str(c).isdigit()]
         
-        # 1. جلب الأسئلة مع ربط اسم القسم (السر القديم)
+        if not cat_ids:
+            await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام صالحة لهذه المسابقة.")
+            return
+
+        # جلب الأسئلة المرتبطة فقط بـ cat_ids المختارة حالياً
         res = supabase.table("questions") \
             .select("*, categories(name)") \
-            .in_("category_id", cat_list) \
+            .in_("category_id", cat_ids) \
             .limit(int(quiz_data['questions_count'])) \
             .execute()
         
         questions = res.data
         if not questions:
-            await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة في الأقسام المختارة: {cat_list}")
+            await bot.send_message(chat_id, "⚠️ لم أجد أسئلة في هذه الأقسام حالياً.")
             return
 
         random.shuffle(questions)
         overall_scores = {}
 
         for i, q in enumerate(questions):
-            # استخدام question_content بناءً على صورك في سوبابيس
             q_text = q.get('question_content', 'نص مفقود')
-            # جلب اسم القسم من الربط categories
             cat_name = q.get('categories', {}).get('name', 'عام')
-            # جلب الإجابة الصحيحة
             ans = q.get('correct_answer') or q.get('answer_text') or ""
 
             active_quizzes[chat_id] = {
@@ -851,10 +849,8 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                 'cat_name': cat_name
             }
             
-            # 2. إرسال السؤال بالواجهة المزخرفة
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
-            # 3. نظام المؤقت الذكي
             start_time = time.time()
             while time.time() - start_time < int(quiz_data['time_limit']):
                 await asyncio.sleep(0.1)
@@ -863,26 +859,28 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
             active_quizzes[chat_id]['active'] = False
             
-            # حساب النقاط
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
 
             await bot.send_message(chat_id, f"✅ الإجابة الصحيحة هي: **{ans}**")
             await asyncio.sleep(2)
 
-        await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية لمبدعينا.**")
+        # عرض قائمة الفائزين النهائية
+        leaderboard = "\n".join([f"👤 {v['name']}: {v['points']} نقطة" for k, v in overall_scores.items()])
+        await bot.send_message(chat_id, f"🏁 **انتهت المسابقة!**\n\n🏆 **النتائج:**\n{leaderboard or 'لا يوجد فائزين'}")
         
     except Exception as e:
         logging.error(f"Engine Error: {e}")
         await bot.send_message(chat_id, f"❌ خطأ في المحرك: {e}")
-            
+
 # ==========================================
-# 3. رصد الإجابات وبدء التشغيل
+# 4. رصد الإجابات
 # ==========================================
 @dp.message_handler(lambda m: not m.text.startswith('/'))
 async def check_ans(m: types.Message):
     cid = m.chat.id
     if cid in active_quizzes and active_quizzes[cid]['active']:
+        # مقارنة ذكية تتجاهل المسافات
         if m.text.strip() == active_quizzes[cid]['ans']:
             if not any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners']):
                 active_quizzes[cid]['winners'].append({"name": m.from_user.first_name, "id": m.from_user.id})
@@ -891,4 +889,4 @@ async def check_ans(m: types.Message):
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
-            
+                                                        
