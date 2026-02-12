@@ -728,8 +728,7 @@ async def handle_secure(c: types.CallbackQuery):
     if "close" in c.data:
         await c.message.delete()
     else:
-        await c.answer("🚀 جارٍ إطلاق المسابقة.. استعد!")
-    # --- 1. محركات التصميم والزخرفة ---
+                # --- 1. محركات التصميم والزخرفة ---
 async def countdown_timer(message: types.Message, seconds=5):
     text = "🚀 **تجهيز المسابقة...**\n\nستبدأ المسابقة خلال: {}"
     msg = await message.answer(text.format(seconds))
@@ -745,10 +744,8 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
         f"🎓 الـمنـظـم: {settings['owner_name']}\n"
         "┏━━━━━━━━━━━━━━━━━━━━┓\n"
         f"📌 السؤال: « {current_num} » من « {total_num} » 📍\n"
-        f"📁 نوع القسم: {settings['cat_name']}\n"
         f"🚀 نظام الإجابة: {settings['mode']}\n"
         f"⏳ المهلة: {settings['time_limit']} ثانية\n"
-        f"✍️ الكاتب: {q_data.get('created_by_name', 'مبدع مجهول')}\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛\n"
         "  ╔════════════════════╗\n"
         "    ❓ السؤال هو :\n"
@@ -758,108 +755,49 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     return await bot.send_message(chat_id, text)
 
 async def send_answer_summary(chat_id, correct_ans, extra_ans, winners, losers, overall_rank):
-    winners_list = "\n".join([f"{i+1}- {w['name']} (+10)" for i, w in enumerate(winners)]) if winners else "لا يوجد"
-    losers_list = "\n".join([f"{i+1}- {l['name']}" for i, l in enumerate(losers)]) if losers else "لا يوجد"
+    winners_list = "\n".join([f"✅ {w['name']} (+10)" for w in winners]) if winners else "لا يوجد"
+    rank_text = "".join([f"{['🥇','🥈','🥉'][i]} {u['name']}: {u['points']}pt\n" for i, u in enumerate(overall_rank[:3])])
     
-    ranks = ["🥇", "🥈", "🥉"]
-    rank_text = ""
-    for i, user in enumerate(overall_rank[:3]):
-        rank_text += f"{ranks[i]} {user['name']} - {user['points']} نقطة\n"
-
     text = (
-        f"✅ الإجابة الصحيحة: {correct_ans}\n"
-        f"➕ إجابة إضافية: {extra_ans if extra_ans else 'لا يوجد'}\n"
+        f"✅ الإجابة: {correct_ans}\n"
         "━━━━━━━━━━━━━━\n"
-        "╭─── قائمة المبدعين (صح) ✅ ───╮\n"
-        f"{winners_list}\n"
-        "╰──────────────────╯\n"
-        "╭─── المحاولات القادمة (خطأ) ❌ ───╮\n"
-        f"{losers_list}\n"
-        "╰──────────────────╯\n"
-        "╭─── الترتيب العام للمسابقة 📊 ───╮\n"
-        f"{rank_text if rank_text else 'لا يوجد نقاط بعد'}"
-        "╰──────────────────╯"
+        f"🏆 الفائزون:\n{winners_list}\n"
+        "━━━━━━━━━━━━━━\n"
+        f"📊 الترتيب العام:\n{rank_text if rank_text else 'ننتظر أول نقطة!'}"
     )
     await bot.send_message(chat_id, text)
-    # --- 2. محرك تشغيل المسابقة ---
+
+# --- 2. محرك تشغيل المسابقة الموحد ---
 active_quizzes = {}
 
 async def run_quiz_logic(chat_id, quiz_data, owner_name):
-    res = supabase.table("questions").select("*").in_("category_id", quiz_data['cats']).limit(quiz_data['questions_count']).execute()
-    questions = res.data
-    random.shuffle(questions)
-    overall_scores = {}
-
-    for i, q in enumerate(questions):
-        active_quizzes[chat_id] = {"is_active": True, "correct_ans": q['answer_text'].strip(), "winners": [], "losers": []}
-        settings = {'owner_name': owner_name, 'cat_name': "أقسامك الخاصة", 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit']}
-        
-        await send_quiz_question(chat_id, q, i+1, len(questions), settings)
-        
-        start_time = time.time()
-        while time.time() - start_time < quiz_data['time_limit']:
-            await asyncio.sleep(0.1)
-            if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['is_active']:
-                break
-
-        active_quizzes[chat_id]['is_active'] = False
-        
-        # إضافة نقاط للفائزين وتحديث الترتيب
-        for w in active_quizzes[chat_id]['winners']:
-            uid = w['id']
-            if uid not in overall_scores: overall_scores[uid] = {"name": w['name'], "points": 0}
-            overall_scores[uid]['points'] += 10
-
-        top_3 = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)[:3]
-        await send_answer_summary(chat_id, q['answer_text'], "", active_quizzes[chat_id]['winners'], active_quizzes[chat_id]['losers'], top_3)
-        await asyncio.sleep(3)
-
-    await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية لكل المبدعين.**")
-    # --- 3. محرك رصد الإجابات الذكي ---
-@dp.message_handler(lambda message: not message.text.startswith('/'))
-async def check_answers(message: types.Message):
-    chat_id = message.chat.id
-    if chat_id not in active_quizzes or not active_quizzes[chat_id]['is_active']:
-        return
-
-    user_id = message.from_user.id
-    user_name = message.from_user.first_name
-    user_answer = message.text.strip()
-    
-    if user_answer == active_quizzes[chat_id]['correct_ans']:
-        active_quizzes[chat_id]['is_active'] = False
-        active_quizzes[chat_id]['winners'].append({"name": user_name, "id": user_id})
-    else:
-        if not any(l['id'] == user_id for l in active_quizzes[chat_id]['losers']):
-            active_quizzes[chat_id]['losers'].append({"name": user_name, "id": user_id})
-# ==========================================
-# 1. محرك تشغيل المسابقة (المسؤول عن إرسال الأسئلة)
-# ==========================================
-async def run_quiz_logic(chat_id, quiz_data, owner_name):
     try:
-        # جلب الأسئلة بناءً على الأقسام المحددة
+        # جلب الأسئلة - تأكد أن العمود في سوبابيس هو category_id
         res = supabase.table("questions").select("*").in_("category_id", quiz_data['cats']).limit(quiz_data['questions_count']).execute()
         questions = res.data
         
-        if not questions or len(questions) == 0:
-            await bot.send_message(chat_id, "⚠️ عذراً، لا توجد أسئلة كافية في الأقسام المختارة.")
+        if not questions:
+            await bot.send_message(chat_id, "⚠️ لا توجد أسئلة كافية في هذه الأقسام!")
             return
 
         random.shuffle(questions)
-        overall_scores = {} 
+        overall_scores = {}
 
         for i, q in enumerate(questions):
+            # توحيد مسمى الإجابة (تأكد هل هي correct_answer أم answer_text في سوبابيس)
+            correct = q.get('correct_answer') or q.get('answer_text') or ""
+            
             active_quizzes[chat_id] = {
                 "is_active": True, 
-                "correct_ans": str(q['correct_answer']).strip() if q['correct_answer'] else "", 
-                "winners": [], "losers": []
+                "correct_ans": str(correct).strip(), 
+                "winners": [], 
+                "losers": []
             }
             
             settings = {'owner_name': owner_name, 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit']}
-            q_data_display = {'question_text': q['question_content'], 'created_by_name': owner_name}
+            q_display = {'question_text': q['question_content']}
             
-            # استدعاء دالة الإرسال (تأكد أنها معرفة فوق في كودك)
-            await send_quiz_question(chat_id, q_data_display, i+1, len(questions), settings)
+            await send_quiz_question(chat_id, q_display, i+1, len(questions), settings)
             
             start_time = time.time()
             while time.time() - start_time < quiz_data['time_limit']:
@@ -874,83 +812,58 @@ async def run_quiz_logic(chat_id, quiz_data, owner_name):
                 overall_scores.setdefault(uid, {"name": w['name'], "points": 0})['points'] += 10
 
             top_3 = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)[:3]
-            await send_answer_summary(chat_id, q['correct_answer'], "", active_quizzes[chat_id]['winners'], active_quizzes[chat_id]['losers'], top_3)
-            await asyncio.sleep(3) 
+            await send_answer_summary(chat_id, correct, "", active_quizzes[chat_id]['winners'], active_quizzes[chat_id]['losers'], top_3)
+            await asyncio.sleep(3)
 
-        await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية لمبدعينا.**")
+        await bot.send_message(chat_id, "🏁 **انتهت المسابقة! مبروك للفائزين.**")
     except Exception as e:
-        logging.error(f"Error in run_quiz_logic: {e}")
-        await bot.send_message(chat_id, "❌ حدث خطأ أثناء تشغيل المسابقة.")
+        logging.error(f"Error: {e}")
 
-# ==========================================
-# 2. معالج الأزرار وتشغيل المحفوظات
-# ==========================================
+# --- 3. معالجات الأزرار والرسائل ---
+@dp.message_handler(lambda message: not message.text.startswith('/'))
+async def check_answers(message: types.Message):
+    chat_id = message.chat.id
+    if chat_id in active_quizzes and active_quizzes[chat_id]['is_active']:
+        user_answer = message.text.strip()
+        if user_answer == active_quizzes[chat_id]['correct_ans']:
+            active_quizzes[chat_id]['is_active'] = False
+            active_quizzes[chat_id]['winners'].append({"name": message.from_user.first_name, "id": message.from_user.id})
 
 @dp.message_handler(lambda message: message.text == "🗂️ المسابقات المحفوظة")
 async def show_quizzes(message: types.Message):
-    user_id = str(message.from_user.id)
-    res = supabase.table("saved_quizzes").select("*").eq("created_by", user_id).execute()
-    quizzes = res.data
-    
-    if not quizzes:
-        await message.answer("❌ ليس لديك مسابقات محفوظة.")
+    res = supabase.table("saved_quizzes").select("*").eq("created_by", str(message.from_user.id)).execute()
+    if not res.data:
+        await message.answer("❌ لا يوجد مسابقات محفوظة.")
         return
-
     kb = InlineKeyboardMarkup(row_width=1)
-    for q in quizzes:
-        # لاحظ هنا نستخدم manage_quiz_ مباشرة مع المعرف
+    for q in res.data:
         kb.add(InlineKeyboardButton(f"🏆 {q['quiz_name']}", callback_data=f"mq_{q['id']}"))
-    
-    await message.answer("🗂️ **مسابقاتك المحفوظة:**", reply_markup=kb)
+    await message.answer("🗂️ **مسابقاتك:**", reply_markup=kb)
 
 @dp.callback_query_handler(lambda c: c.data.startswith('mq_'))
 async def manage_quiz_selected(c: types.CallbackQuery):
     quiz_id = c.data.split('_')[1]
-    res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
-    q_data = res.data
+    q_data = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute().data
+    if not q_data: return
     
-    if not q_data:
-        await c.answer("❌ المسابقة غير موجودة!")
-        return
-
     import json
-    # تحويل الأقسام من نص إلى قائمة لضمان عمل المحرك
-    try:
-        cats = json.loads(q_data['categories']) if isinstance(q_data['categories'], str) else q_data['categories']
-    except:
-        cats = q_data['categories']
-        if not isinstance(cats, list): cats = [cats]
+    try: cats = json.loads(q_data['categories']) if isinstance(q_data['categories'], str) else q_data['categories']
+    except: cats = q_data['categories']
 
-    quiz_config = {
-        'cats': cats,
+    await c.message.edit_text(f"🚀 **جاري بدء: {q_data['quiz_name']}**")
+    await run_quiz_logic(c.message.chat.id, {
+        'cats': cats if isinstance(cats, list) else [cats],
         'questions_count': int(q_data['questions_count']),
         'time_limit': int(q_data['time_limit']),
         'mode': q_data['quiz_mode']
-    }
-
-    await c.message.edit_text(f"🚀 **جاري بدء مسابقة: {q_data['quiz_name']}**")
-    await run_quiz_logic(c.message.chat.id, quiz_config, c.from_user.first_name)
-
-# ==========================================
-# 3. دالة الحذف والإغلاق (نهاية الملف)
-# ==========================================
+    }, c.from_user.first_name)
 
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
 async def dbl_del(c: types.CallbackQuery):
     qid = c.data.split('_')[1]
-    now = time.time()
-    if c.from_user.id in last_clicks and qid in last_clicks[c.from_user.id] and now - last_clicks[c.from_user.id][qid] < 0.8:
-        supabase.table("questions").delete().eq("id", qid).execute()
-        await c.answer("🗑️ تم الحذف")
-    else:
-        last_clicks.setdefault(c.from_user.id, {})[qid] = now
-        await c.answer("⚠️ اضغط مرة أخرى بسرعة!")
-
-@dp.callback_query_handler(lambda c: c.data == 'close_bot')
-async def close_msg(c: types.CallbackQuery):
-    await c.message.delete()
+    supabase.table("questions").delete().eq("id", qid).execute()
+    await c.answer("🗑️ تم الحذف")
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
     executor.start_polling(dp, skip_updates=True)
-                
+        
