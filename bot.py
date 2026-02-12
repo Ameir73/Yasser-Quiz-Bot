@@ -904,7 +904,36 @@ async def show_quizzes(message: types.Message):
         kb.add(InlineKeyboardButton(f"🏆 {q['quiz_name']}", callback_data=f"manage_quiz_{q['id']}"))
     
     await message.answer("🗂️ **مسابقاتك المحفوظة:**\nاختر مسابقة لإدارتها أو تشغيلها:", reply_markup=kb)
+# هذا المعالج يستجيب عند الضغط على أي مسابقة في القائمة
+@dp.callback_query_handler(lambda c: c.data.startswith('manage_quiz_'))
+async def manage_quiz_selected(c: types.CallbackQuery):
+    quiz_id = c.data.split('_')[2]
+    
+    # جلب بيانات المسابقة من جدول saved_quizzes
+    res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
+    quiz_data = res.data
+    
+    if not quiz_data:
+        await c.answer("❌ تعذر العثور على المسابقة!")
+        return
 
+    # استخراج الأقسام المحفوظة (نحولها من نص JSON إلى قائمة)
+    import json
+    selected_cats = json.loads(quiz_data['categories'])
+    
+    # تجهيز بيانات المسابقة للتشغيل
+    quiz_config = {
+        'cats': selected_cats,
+        'questions_count': quiz_data['questions_count'],
+        'time_limit': quiz_data['time_limit'],
+        'mode': quiz_data['quiz_mode']
+    }
+
+    await c.message.edit_text(f"🚀 **جاري تحضير مسابقة: {quiz_data['quiz_name']}**\nانتظر قليلاً...")
+    
+    # تشغيل المحرك الذي برمجناه سابقاً
+    await run_quiz_logic(c.message.chat.id, quiz_config, c.from_user.first_name)
+    
 # هكذا يجب أن يكون شكل الكود بعد حذف الزيادات
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
 async def dbl_del(c: types.CallbackQuery):
