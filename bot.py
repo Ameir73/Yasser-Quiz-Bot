@@ -720,51 +720,64 @@ async def show_quizzes(message: types.Message):
 # ==========================================
 # 1. حماية الأزرار والتشغيل الموحد
 # ==========================================
-@dp.callback_query_handler(lambda c: c.data.startswith(('run_', 'close_')), state="*")
+@dp.callback_query_handler(lambda c: c.data.startswith(('run_', 'close_')))
 async def handle_secure(c: types.CallbackQuery):
     try:
         data_parts = c.data.split('_')
         owner_id = data_parts[-1]
-        
+
         if str(c.from_user.id) != owner_id:
             await c.answer("🚫 لا يسمح لك بلمس أزرار غيرك!", show_alert=True)
             return
-        
+
         if "close" in c.data:
             await c.message.delete()
             return
 
-        # إذا كان الزر للتشغيل
         await c.answer("🚀 استعد.. بدأت الإثارة!")
         quiz_id = data_parts[1]
         
-        # جلب بيانات المسابقة
+        # جلب البيانات
         res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
         q_data = res.data
         
-        if q_data:
-            # تشغيل العد التنازلي أولاً
-            await countdown_timer(c.message, 5)
-            
-            # تجهيز الإعدادات
-            import json
-            try: cats = json.loads(q_data['categories']) if isinstance(q_data['categories'], str) else q_data['categories']
-            except: cats = q_data['categories']
+        if not q_data:
+            await c.message.edit_text("❌ خطأ: لم يتم العثور على المسابقة!")
+            return
 
-            quiz_config = {
-                'cats': cats if isinstance(cats, list) else [cats],
-                'questions_count': int(q_data['questions_count']),
-                'time_limit': int(q_data['time_limit']),
-                'mode': q_data['quiz_mode']
-            }
-            
-            await c.message.edit_text(f"🏁 **انطلقت الآن: {q_data['quiz_name']}**")
-            # استدعاء المحرك (تأكد من وجود دالة واحدة فقط بهذا الاسم)
-            await start_quiz_engine(c.message.chat.id, quiz_config, c.from_user.first_name)
+        # تشغيل العد التنازلي
+        await countdown_timer(c.message, 5)
+        
+        # --- الفحص المرن للأقسام (هنا حل مشكلة 'categories') ---
+        import json
+        # نحاول جلب البيانات من categories أو cats أو نضع قائمة فارغة
+        raw_cats = q_data.get('categories') or q_data.get('cats') or []
+        
+        try:
+            if isinstance(raw_cats, str):
+                cats = json.loads(raw_cats)
+            else:
+                cats = raw_cats
+        except:
+            cats = raw_cats
+
+        quiz_config = {
+            'cats': cats if isinstance(cats, list) else [cats],
+            'questions_count': int(q_data.get('questions_count', 10)),
+            'time_limit': int(q_data.get('time_limit', 15)),
+            'mode': q_data.get('quiz_mode', 'عادي')
+        }
+        
+        await c.message.edit_text(f"🏁 **انطلقت الآن: {q_data.get('quiz_name', 'مسابقة')}**")
+        
+        # استدعاء المحرك
+        await start_quiz_engine(c.message.chat.id, quiz_config, c.from_user.first_name)
             
     except Exception as e:
         logging.error(f"Error in handle_secure: {e}")
-
+        # إذا حدث خطأ سيخبرك البوت فوراً في الشات بدلاً من التوقف
+        await c.message.reply(f"⚠️ تنبيه: {e}")
+        
 # ==========================================
 # 1. محركات التصميم والزخرفة (من السطر 768)
 # ==========================================
