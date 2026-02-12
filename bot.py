@@ -832,7 +832,60 @@ async def check_answers(message: types.Message):
     else:
         if not any(l['id'] == user_id for l in active_quizzes[chat_id]['losers']):
             active_quizzes[chat_id]['losers'].append({"name": user_name, "id": user_id})
-            
+            async def run_quiz_logic(chat_id, quiz_data, owner_name):
+    # 1. جلب الأسئلة بناءً على الأقسام المحددة
+    res = supabase.table("questions").select("*").in_("category_id", quiz_data['cats']).limit(quiz_data['questions_count']).execute()
+    questions = res.data
+    random.shuffle(questions)
+
+    overall_scores = {} 
+
+    for i, q in enumerate(questions):
+        # تصفير بيانات السؤال الحالي - استخدام المسميات من صورك
+        active_quizzes[chat_id] = {
+            "is_active": True, 
+            "correct_ans": q['correct_answer'].strip() if q['correct_answer'] else "", 
+            "winners": [], 
+            "losers": []
+        }
+        
+        # تجهيز الإجابات الإضافية للعرض في الملخص
+        extra = q.get('second_answer') or q.get('alternative_answer') or ""
+
+        settings = {
+            'owner_name': owner_name, 
+            'cat_name': "أقسامك الخاصة", 
+            'mode': quiz_data['mode'], 
+            'time_limit': quiz_data['time_limit']
+        }
+        
+        # إرسال واجهة السؤال (باستخدام سؤالك: question_content)
+        q_data_for_display = {'question_text': q['question_content'], 'created_by_name': owner_name}
+        await send_quiz_question(chat_id, q_data_for_display, i+1, len(questions), settings)
+        
+        start_time = time.time()
+        while time.time() - start_time < quiz_data['time_limit']:
+            await asyncio.sleep(0.1)
+            # نظام السرعة: إذا جاوب شخص، ننهي السؤال
+            if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['is_active']:
+                break
+
+        active_quizzes[chat_id]['is_active'] = False
+        
+        # تحديث نقاط الترتيب العام
+        for w in active_quizzes[chat_id]['winners']:
+            uid = w['id']
+            if uid not in overall_scores: overall_scores[uid] = {"name": w['name'], "points": 0}
+            overall_scores[uid]['points'] += 10
+
+        top_3 = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)[:3]
+        
+        # إرسال ملخص الإجابة المبدع
+        await send_answer_summary(chat_id, q['correct_answer'], extra, active_quizzes[chat_id]['winners'], active_quizzes[chat_id]['losers'], top_3)
+        await asyncio.sleep(3) # وقت مستقطع قبل السؤال التالي
+
+    await bot.send_message(chat_id, "🏁 **انتهت المسابقة! تحية لمبدعينا.**")
+    
 # --- الحذف بلمستين ---
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
 async def dbl_del(c: types.CallbackQuery):
