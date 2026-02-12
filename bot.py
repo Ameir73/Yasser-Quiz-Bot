@@ -671,6 +671,33 @@ async def cycle_mode(c: types.CallbackQuery, state: FSMContext):
     next_mode = 'الوقت الكامل ⏳' if current == 'السرعة ⚡' else 'السرعة ⚡'
     await state.update_data(quiz_mode=next_mode)
     await final_quiz_settings_panel(c, state)
+    # --- عملية الحفظ ---
+@dp.callback_query_handler(lambda c: c.data == "save_quiz_process", state="*")
+async def start_save(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    await c.message.edit_text("📝 **يا بطل، أرسل الآن اسم المسابقة التي تريد حفظها:**\n(مثلاً: تحدي الأذكياء)")
+    # نستخدم حالة مخصصة لاستقبال الاسم
+    await state.set_state("wait_for_name")
+
+@dp.message_handler(state="wait_for_name")
+async def process_quiz_name(message: types.Message, state: FSMContext):
+    quiz_name = message.text
+    user_id = str(message.from_user.id)
+    data = await state.get_data()
+    
+    # حفظ في سوبابيس (تأكد من وجود جدول باسم saved_quizzes)
+    payload = {
+        "created_by": user_id,
+        "quiz_name": quiz_name,
+        "time_limit": data.get('quiz_time', 15),
+        "questions_count": data.get('quiz_count', 10),
+        "mode": data.get('quiz_mode', 'السرعة ⚡'),
+        "cats": [cat['id'] for cat in data.get('eligible_cats', [])]
+    }
+    supabase.table("saved_quizzes").insert(payload).execute()
+    
+    await message.answer(f"✅ **تم حفظ المسابقة ({quiz_name}) بنجاح!**\n\n🚀 لتشغيلها في أي وقت، أرسل كلمة: **مسابقة**")
+    await state.finish()
     
 # --- الحذف بلمستين ---
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
