@@ -698,6 +698,37 @@ async def process_quiz_name(message: types.Message, state: FSMContext):
     
     await message.answer(f"✅ **تم حفظ المسابقة ({quiz_name}) بنجاح!**\n\n🚀 لتشغيلها في أي وقت، أرسل كلمة: **مسابقة**")
     await state.finish()
+    @dp.message_handler(lambda message: message.text == "مسابقة")
+async def show_quizzes(message: types.Message):
+    u_id = str(message.from_user.id)
+    res = supabase.table("saved_quizzes").select("*").eq("created_by", u_id).execute()
+    
+    if not res.data:
+        await message.answer("⚠️ ليس لديك مسابقات محفوظة باسمك.")
+        return
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    for q in res.data:
+        # نربط الزر بـ ID صاحب الرسالة للحماية
+        kb.add(InlineKeyboardButton(f"🎬 تشغيل: {q['quiz_name']}", callback_data=f"run_{q['id']}_{u_id}"))
+    
+    kb.add(InlineKeyboardButton("⚙️ الأقسام المختارة (قيد التطوير)", callback_data="bot_dev_msg"))
+    kb.add(InlineKeyboardButton("❌ إغلاق النافذة", callback_data=f"close_{u_id}"))
+    
+    await message.reply(f"🎁 **مسابقاتك المحفوظة يا {message.from_user.first_name}:**", reply_markup=kb)
+
+# حماية الأزرار
+@dp.callback_query_handler(lambda c: c.data.startswith(('run_', 'close_')), state="*")
+async def handle_secure(c: types.CallbackQuery):
+    owner_id = c.data.split('_')[-1]
+    if str(c.from_user.id) != owner_id:
+        await c.answer("🚫 لا يسمح لك بلمس أزرار غيرك! اطلب مسابقتك بنفسك.", show_alert=True)
+        return
+    
+    if "close" in c.data:
+        await c.message.delete()
+    else:
+        await c.answer("🚀 جارٍ إطلاق المسابقة.. استعد!")
     
 # --- الحذف بلمستين ---
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
