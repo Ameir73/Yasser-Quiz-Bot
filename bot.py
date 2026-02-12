@@ -905,12 +905,7 @@ async def show_quizzes(message: types.Message):
     
     await message.answer("🗂️ **مسابقاتك المحفوظة:**\nاختر مسابقة لإدارتها أو تشغيلها:", reply_markup=kb)
 
-# --- الحذف بلمستين (تأكد أنها أيضاً ملتصقة باليسار) ---
-@dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
-async def dbl_del(c: types.CallbackQuery):
-    
-    
-# --- الحذف بلمستين ---
+# هكذا يجب أن يكون شكل الكود بعد حذف الزيادات
 @dp.callback_query_handler(lambda c: c.data.startswith('delq_'))
 async def dbl_del(c: types.CallbackQuery):
     qid = c.data.split('_')[1]
