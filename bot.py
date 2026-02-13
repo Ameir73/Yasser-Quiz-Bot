@@ -739,7 +739,7 @@ async def show_quizzes(obj):
     else: await obj.message.edit_text(title, reply_markup=kb)
 
 # ==========================================
-# [2] المحرك الأمني ولوحة التحكم الشاملة
+# [2] المحرك الأمني ولوحة التحكم الشاملة (نسخة ياسر المحدثة)
 # ==========================================
 @dp.callback_query_handler(lambda c: c.data.startswith(('run_', 'close_', 'confirm_del_', 'final_del_', 'edit_time_', 'set_t_', 'manage_quiz_', 'quiz_settings_', 'back_to_list', 'bot_dev_msg', 'edit_count_', 'set_c_', 'toggle_speed_', 'toggle_scope_')))
 async def handle_secure_actions(c: types.CallbackQuery):
@@ -765,15 +765,18 @@ async def handle_secure_actions(c: types.CallbackQuery):
             await c.message.edit_text(f"💎 **إدارة مسابقة: {res.data['quiz_name']}**\nيمكنك البدء الآن أو التحكم في الإعدادات أدناه:", reply_markup=kb)
             return
 
-        # --- لوحة الإعدادات (نظامك الجديد يا ياسر) ---
+        # --- لوحة الإعدادات (نظام تغيير أسماء الأزرار تلقائياً) ---
         if c.data.startswith('quiz_settings_'):
             quiz_id = data_parts[2]
             res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
             q = res.data
             
-            # تحديد المسميات بناءً على الاختيارات الحالية
-            speed_label = "⚡ نظام السرعة (أول إجابة)" if q.get('mode') == "السرعة ⚡" else "⏳ نظام الوقت (انتظار)"
-            scope_label = "🌐 مسابقة عامة" if q.get('quiz_scope') == "عام" else "🔒 مسابقة قروب"
+            # تحديد المسميات بناءً على الحالة في قاعدة البيانات
+            current_mode = q.get('mode', 'السرعة ⚡')
+            speed_label = "⚡ نظام السرعة" if current_mode == "السرعة ⚡" else "⏳ نظام الوقت"
+            
+            current_scope = q.get('quiz_scope', 'خاص')
+            scope_label = "🔒 مسابقة قروب" if current_scope == "خاص" else "🌐 مسابقة عامة"
             
             kb = InlineKeyboardMarkup(row_width=2)
             kb.add(
@@ -787,10 +790,10 @@ async def handle_secure_actions(c: types.CallbackQuery):
             kb.add(InlineKeyboardButton("🗑️ حذف المسابقة", callback_data=f"confirm_del_{quiz_id}_{user_id}"))
             kb.add(InlineKeyboardButton("🔙 رجوع للخلف", callback_data=f"manage_quiz_{quiz_id}_{user_id}"))
             
-            await c.message.edit_text("⚙️ **إعدادات المسابقة:**\nتحكم في طريقة عمل مسابقتك الخاصة:", reply_markup=kb)
+            await c.message.edit_text(f"⚙️ **إعدادات المسابقة: {q['quiz_name']}**\nتحكم في طريقة عمل مسابقتك الخاصة:", reply_markup=kb)
             return
 
-        # --- تعديل عدد الأسئلة (الخيارات الجديدة) ---
+        # --- تعديل عدد الأسئلة (الخيارات: 5، 10، 15، 20، 30، 40) ---
         if c.data.startswith('edit_count_'):
             quiz_id = data_parts[2]
             kb = InlineKeyboardMarkup(row_width=3)
@@ -805,10 +808,10 @@ async def handle_secure_actions(c: types.CallbackQuery):
             quiz_id, count = data_parts[2], data_parts[3]
             supabase.table("saved_quizzes").update({"questions_count": int(count)}).eq("id", quiz_id).execute()
             await c.answer(f"✅ تم تغيير عدد الأسئلة إلى {count}")
-            await handle_secure_actions(c) # العودة للوحة الإعدادات
+            await handle_secure_actions(c) 
             return
 
-        # --- تعديل الوقت (نظامك المطلوب) ---
+        # --- تعديل الوقت ---
         if c.data.startswith('edit_time_'):
             quiz_id = data_parts[2]
             kb = InlineKeyboardMarkup(row_width=3)
@@ -825,23 +828,26 @@ async def handle_secure_actions(c: types.CallbackQuery):
             await handle_secure_actions(c)
             return
 
-        # --- تبديل الأنظمة (السرعة والنوع) ---
+        # --- تبديل الأنظمة (تغيير اسم الزر تفاعلياً) ---
         if c.data.startswith('toggle_speed_'):
             quiz_id = data_parts[2]
             res = supabase.table("saved_quizzes").select("mode").eq("id", quiz_id).single().execute()
             new_mode = "الوقت ⏳" if res.data['mode'] == "السرعة ⚡" else "السرعة ⚡"
             supabase.table("saved_quizzes").update({"mode": new_mode}).eq("id", quiz_id).execute()
             await c.answer(f"🔄 تم التغيير إلى: {new_mode}")
-            await handle_secure_actions(c)
+            await handle_secure_actions(c) # لتحديث الاسم في الزر فوراً
             return
 
         if c.data.startswith('toggle_scope_'):
             quiz_id = data_parts[2]
             res = supabase.table("saved_quizzes").select("quiz_scope").eq("id", quiz_id).single().execute()
-            new_scope = "عام" if res.data.get('quiz_scope') != "عام" else "خاص"
+            # تبديل الحالة بين خاص وعام
+            old_scope = res.data.get('quiz_scope', 'خاص')
+            new_scope = "عام" if old_scope == "خاص" else "خاص"
             supabase.table("saved_quizzes").update({"quiz_scope": new_scope}).eq("id", quiz_id).execute()
-            await c.answer(f"🌍 نوع المسابقة: {new_scope}")
-            await handle_secure_actions(c)
+            msg = "🌐 النوع الجديد: عام" if new_scope == "عام" else "🔒 النوع الجديد: قروب"
+            await c.answer(msg)
+            await handle_secure_actions(c) # لتحديث الاسم في الزر فوراً
             return
 
         # --- نظام الرجوع والحذف والتشغيل ---
@@ -891,7 +897,7 @@ async def handle_secure_actions(c: types.CallbackQuery):
 
     except Exception as e:
         logging.error(f"Error in Secure Logic: {e}")
-            
+                                                        
 # ==========================================
 # 2. محركات التصميم والزخرفة
 # ==========================================
