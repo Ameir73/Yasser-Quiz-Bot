@@ -1066,19 +1066,28 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 async def check_ans(m: types.Message):
     cid = m.chat.id
     if cid in active_quizzes and active_quizzes[cid]['active']:
-        # تنظيف الإجابة من المسافات وتحويلها للمطابقة
         user_ans = m.text.strip().lower()
         correct_ans = active_quizzes[cid]['ans'].lower()
         
         if user_ans == correct_ans:
-            # منع تكرار نفس الفائز في السؤال الواحد
             if not any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners']):
                 active_quizzes[cid]['winners'].append({"name": m.from_user.first_name, "id": m.from_user.id})
                 
-                # إشعار سريع بالفوز
                 if active_quizzes[cid]['mode'] == 'السرعة ⚡':
                     active_quizzes[cid]['active'] = False
                     await m.reply("⚡ **إجابة صاروخية! أنت الأول.**")
                 else:
                     await m.reply("✅ **إجابة صحيحة!**")
+
+# --- إصلاح نظام التشغيل لـ Render ---
+if __name__ == '__main__':
+    from aiogram import executor
+    import logging
+    
+    # تغيير نظام التنسيق لتجنب التحذير في السجلات
+    bot.parse_mode = "HTML" 
+    
+    logging.basicConfig(level=logging.INFO)
+    # البدء بالتشغيل مع تجاهل الرسائل القديمة
+    executor.start_polling(dp, skip_updates=True)
     
