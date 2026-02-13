@@ -916,7 +916,7 @@ async def handle_secure_actions(c: types.CallbackQuery):
         logging.error(f"Error in Secure Logic: {e}")
                                                         
 # ==========================================
-# 2. محركات التصميم والزخرفة
+# 2. محركات التصميم والزخرفة والتلميح
 # ==========================================
 async def countdown_timer(message: types.Message, seconds=5):
     try:
@@ -925,6 +925,28 @@ async def countdown_timer(message: types.Message, seconds=5):
             await asyncio.sleep(1)
     except Exception as e:
         logging.error(f"Countdown Error: {e}")
+
+# --- [دالة توليد التلميح الذكي الجديدة] ---
+async def generate_smart_hint(answer_text):
+    answer_text = str(answer_text).strip()
+    words = answer_text.split()
+    
+    # 1. إذا كانت الإجابة كلمة واحدة
+    if len(words) == 1:
+        if len(answer_text) <= 3:
+            return f"💡 **تلميح:** الكلمة تبدأ بحرف ( {answer_text[0]} )"
+        return f"💡 **تلميح:** تبدأ بـ ( {answer_text[:2]} ) وتنتهي بـ ( {answer_text[-1]} )"
+
+    # 2. إذا كانت كلمتين أو أكثر (استدعاء الذكاء الاصطناعي)
+    else:
+        # ملاحظة: تأكد من وجود دالة call_gemini_ai في ملفك
+        prompt = f"أعطني تلميحاً ذكياً وقصيراً جداً عن ({answer_text}) دون ذكر أي كلمة من الإجابة."
+        try:
+            # هنا نفترض وجود دالة استدعاء AI لديك، إذا لم توجد سيستخدم التلميح التلقائي
+            ai_hint = await call_gemini_ai(prompt) 
+            return f"💡 **تلميح ذكي:** {ai_hint}"
+        except:
+            return f"💡 **تلميح:** الإجابة {len(words)} كلمات، تبدأ بـ ( {answer_text[:2]} )"
 
 async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     """واجهة السؤال بزخرفة احترافية"""
@@ -941,25 +963,21 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
 # ==========================================
-# 3. محرك تشغيل المسابقة (المطور لإظهار الأقسام والأوسمة)
+# 3. محرك تشغيل المسابقة (نسخة التلميح الذكي)
 # ==========================================
 active_quizzes = {}
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # تحويل الأقسام لأرقام صحيحة
         cat_ids = [int(c) for c in quiz_data['cats'] if str(c).isdigit()]
-        
         if not cat_ids:
             await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
             return
 
-        # جلب أسماء الأقسام المختارة لعرضها في البداية
         cat_info = supabase.table("categories").select("name").in_("id", cat_ids).execute()
         cat_names_list = [item['name'] for item in cat_info.data]
         names_str = "، ".join(cat_names_list)
 
-        # جلب الأسئلة بناءً على الأقسام المختارة
         res = supabase.table("questions") \
             .select("*, categories(name)") \
             .in_("category_id", cat_ids) \
@@ -971,7 +989,6 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             await bot.send_message(chat_id, "⚠️ لم أجد أسئلة كافية في هذه الأقسام حالياً.")
             return
 
-        # رسالة ترحيب توضح الأقسام المختارة
         welcome_msg = (
             f"🎯 **استعدوا للمنافسة!**\n"
             f"📂 **الأقسام المختارة:** {names_str}\n"
@@ -993,7 +1010,8 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                 "active": True, 
                 "ans": str(ans).strip(), 
                 "winners": [], 
-                "mode": quiz_data['mode']
+                "mode": quiz_data['mode'],
+                "hint_sent": False # لمنع تكرار التلميح
             }
             
             settings = {
@@ -1005,9 +1023,20 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
+            # --- منطق انتظار الإجابة مع التلميح الذكي ---
             start_time = time.time()
-            while time.time() - start_time < int(quiz_data['time_limit']):
+            time_limit = int(quiz_data['time_limit'])
+            
+            while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
+                
+                # إطلاق التلميح عند انتصاف الوقت
+                if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
+                    if (time.time() - start_time) >= (time_limit / 2):
+                        hint_text = await generate_smart_hint(ans)
+                        await bot.send_message(chat_id, hint_text)
+                        active_quizzes[chat_id]['hint_sent'] = True
+
                 if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
                     break
 
@@ -1046,9 +1075,9 @@ async def check_ans(m: types.Message):
         if m.text.strip() == active_quizzes[cid]['ans']:
             if not any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners']):
                 active_quizzes[cid]['winners'].append({"name": m.from_user.first_name, "id": m.from_user.id})
+                # في نظام السرعة، نوقف السؤال فور أول إجابة صحيحة
                 if active_quizzes[cid]['mode'] == 'السرعة ⚡':
                     active_quizzes[cid]['active'] = False
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
-        
