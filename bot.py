@@ -1062,23 +1062,37 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 @dp.message_handler(lambda m: not m.text.startswith('/'))
 async def check_ans(m: types.Message):
     cid = m.chat.id
+    # التأكد من وجود مسابقة نشطة
     if cid in active_quizzes and active_quizzes[cid]['active']:
+        # تنظيف الإجابة وتحويلها للمطابقة
         user_ans = m.text.strip().lower()
         correct_ans = active_quizzes[cid]['ans'].lower()
         
         if user_ans == correct_ans:
+            # منع تكرار نفس الفائز في السؤال الواحد
             if not any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners']):
                 active_quizzes[cid]['winners'].append({"name": m.from_user.first_name, "id": m.from_user.id})
                 
+                # الرد باستخدام HTML لضمان الخط العريض بدون نجوم
                 if active_quizzes[cid]['mode'] == 'السرعة ⚡':
                     active_quizzes[cid]['active'] = False
                     await m.reply("⚡ <b>إجابة صاروخية! أنت الأول.</b>", parse_mode="HTML")
                 else:
                     await m.reply("✅ <b>إجابة صحيحة!</b>", parse_mode="HTML")
 
-# --- أهم جزء لضمان عمل البوت على Render بدون توقف ---
+# ==========================================
+# نهاية الملف: ضمان التشغيل 24/7 على Render
+# ==========================================
 if __name__ == '__main__':
     from aiogram import executor
-    # ضبط البوت ليتعامل مع HTML بشكل افتراضي
+    import logging
+
+    # إعداد السجلات لمراقبة أداء البوت في Render
+    logging.basicConfig(level=logging.INFO)
+    
+    # ضبط البوت ليعتمد HTML كطريقة عرض أساسية (يمنع ظهور النجوم **)
     bot.parse_mode = "HTML"
+    
+    # تشغيل البوت بنظام Polling مستمر 
+    # skip_updates=True تمنع البوت من الانهيار بسبب تراكم الرسائل القديمة
     executor.start_polling(dp, skip_updates=True)
