@@ -1011,37 +1011,40 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
                 
-                # --- منطق التلميح الطائر الاحترافي ---
+                                # --- [منطق التلميح الطائر الاحترافي - نسخة الشبح] ---
                 if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                     if (time.time() - start_time) >= (time_limit / 2):
-                        hint_text = await generate_smart_hint(ans)
+                        hint_text = await generate_smart_hint(ans) # مرتبط بالذكاء الاصطناعي
+                        
+                        # 1. إرسال رسالة التلميح
                         hint_msg = await bot.send_message(chat_id, f"💡 تلميح: {hint_text}")
                         active_quizzes[chat_id]['hint_sent'] = True
                         
                         try:
-                            # تثبيت الرسالة لإظهار الإشعار العلوي (Flying Notification)
+                            # 2. تثبيت الرسالة لإظهار الإشعار العلوي (Flying Notification)
                             await bot.pin_chat_message(chat_id, hint_msg.message_id, disable_notification=False)
                             
-                            # حذف رسالة النظام التلقائية "قام البوت بتثبيت رسالة" فوراً ليبقى الشات نظيفاً
-                            async def delete_system_pin_msg(cid):
-                                await asyncio.sleep(0.3)
-                                # هذا يحتاج إلى صلاحية حذف الرسائل
-                                pass # سيتم التعامل معه في نسخة متطورة لاحقاً 
-                            asyncio.create_task(delete_system_pin_msg(chat_id))
+                            # 3. حذف رسالة التلميح + حذف رسالة "ثبت البوت رسالة" فوراً ليبقى الشات نظيفاً
+                            async def clean_ghost_hint(cid, h_id):
+                                await asyncio.sleep(0.2) # تأخير بسيط لضمان ظهور الإشعار بالأعلى
+                                try:
+                                    await bot.delete_message(cid, h_id)      # حذف نص التلميح من الشات
+                                    await bot.delete_message(cid, h_id + 1)  # حذف جملة "ثبت البوت رسالة" المزعجة
+                                except: pass
+                                
+                                # 4. إلغاء التثبيت من الأعلى بعد 6 ثوانٍ
+                                await asyncio.sleep(6)
+                                try:
+                                    await bot.unpin_chat_message(cid)
+                                except: pass
+                                
+                            asyncio.create_task(clean_ghost_hint(chat_id, hint_msg.message_id))
                         except: pass 
-
-                        # اختفاء التلميح من الشات ومن الأعلى بعد 5 ثوانٍ
-                        async def auto_fly_away(msg, cid):
-                            await asyncio.sleep(5)
-                            try:
-                                await bot.unpin_chat_message(cid, msg.message_id)
-                                await msg.delete()
-                            except: pass
-                        asyncio.create_task(auto_fly_away(hint_msg, chat_id))
 
                 if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
                     break
 
+            # --- نهاية السؤال ورصد النقاط ---
             active_quizzes[chat_id]['active'] = False
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
