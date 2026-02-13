@@ -748,9 +748,9 @@ async def handle_secure(c: types.CallbackQuery):
         # تشغيل العد التنازلي
         await countdown_timer(c.message, 5)
         
-        # --- استخراج الأقسام بمرونة تامة ---
+        # --- استخراج الأقسام من عمود cats ---
         import json
-        raw_cats = q_data.get('categories') or q_data.get('cats') or []
+        raw_cats = q_data.get('cats') or q_data.get('categories') or []
         
         try:
             if isinstance(raw_cats, str):
@@ -765,12 +765,13 @@ async def handle_secure(c: types.CallbackQuery):
             'cats': cats if isinstance(cats, list) else [cats],
             'questions_count': int(q_data.get('questions_count', 10)),
             'time_limit': int(q_data.get('time_limit', 15)),
-            'mode': q_data.get('quiz_mode', 'عادي')
+            'mode': q_data.get('quiz_mode', 'عادي'),
+            'quiz_name': q_data.get('quiz_name', 'مسابقة')
         }
         
-        await c.message.edit_text(f"🏁 **انطلقت الآن: {q_data.get('quiz_name', 'مسابقة')}**")
+        await c.message.edit_text(f"🏁 **انطلقت الآن: {quiz_config['quiz_name']}**")
         
-        # استدعاء المحرك
+        # استدعاء المحرك المطور
         await start_quiz_engine(c.message.chat.id, quiz_config, c.from_user.first_name)
             
     except Exception as e:
@@ -789,6 +790,7 @@ async def countdown_timer(message: types.Message, seconds=5):
         logging.error(f"Countdown Error: {e}")
 
 async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
+    """واجهة السؤال بزخرفة احترافية"""
     text = (
         f"🎓 **الـمنـظـم:** {settings['owner_name']} ☁️☁️\n"
         f"┏━━━━━━━━━━━━━━┓\n"
@@ -802,20 +804,25 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
 # ==========================================
-# 3. محرك تشغيل المسابقة (حل مشكلة تداخل الأقسام)
+# 3. محرك تشغيل المسابقة (المطور لإظهار الأقسام والأوسمة)
 # ==========================================
 active_quizzes = {}
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # ضمان تحويل الأقسام لأرقام صحيحة لتصفية النتائج بدقة
+        # تحويل الأقسام لأرقام صحيحة
         cat_ids = [int(c) for c in quiz_data['cats'] if str(c).isdigit()]
         
         if not cat_ids:
-            await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام صالحة لهذه المسابقة.")
+            await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
             return
 
-        # جلب الأسئلة المرتبطة فقط بـ cat_ids المختارة حالياً
+        # جلب أسماء الأقسام المختارة لعرضها في البداية
+        cat_info = supabase.table("categories").select("name").in_("id", cat_ids).execute()
+        cat_names_list = [item['name'] for item in cat_info.data]
+        names_str = "، ".join(cat_names_list)
+
+        # جلب الأسئلة بناءً على الأقسام المختارة
         res = supabase.table("questions") \
             .select("*, categories(name)") \
             .in_("category_id", cat_ids) \
@@ -824,8 +831,18 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         
         questions = res.data
         if not questions:
-            await bot.send_message(chat_id, "⚠️ لم أجد أسئلة في هذه الأقسام حالياً.")
+            await bot.send_message(chat_id, "⚠️ لم أجد أسئلة كافية في هذه الأقسام حالياً.")
             return
+
+        # رسالة ترحيب توضح الأقسام المختارة
+        welcome_msg = (
+            f"🎯 **استعدوا للمنافسة!**\n"
+            f"📂 **الأقسام المختارة:** {names_str}\n"
+            f"🔢 **عدد الأسئلة:** {len(questions)}\n"
+            f"⏱️ سيظهر السؤال الأول الآن..."
+        )
+        await bot.send_message(chat_id, welcome_msg)
+        await asyncio.sleep(3)
 
         random.shuffle(questions)
         overall_scores = {}
@@ -865,13 +882,22 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             await bot.send_message(chat_id, f"✅ الإجابة الصحيحة هي: **{ans}**")
             await asyncio.sleep(2)
 
-        # عرض قائمة الفائزين النهائية
-        leaderboard = "\n".join([f"👤 {v['name']}: {v['points']} نقطة" for k, v in overall_scores.items()])
-        await bot.send_message(chat_id, f"🏁 **انتهت المسابقة!**\n\n🏆 **النتائج:**\n{leaderboard or 'لا يوجد فائزين'}")
+        # عرض النتائج النهائية بنظام الأوسمة
+        leaderboard = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)
+        results_text = "🏆 **جدول الترتيب النهائي للمسابقة:**\n\n"
+        
+        if not leaderboard:
+            results_text += "لم ينجح أحد في تسجيل نقاط هذه المرة! ❌"
+        else:
+            for idx, player in enumerate(leaderboard):
+                medal = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else "👤"
+                results_text += f"{medal} {player['name']} — {player['points']} نقطة\n"
+
+        await bot.send_message(chat_id, results_text)
         
     except Exception as e:
         logging.error(f"Engine Error: {e}")
-        await bot.send_message(chat_id, f"❌ خطأ في المحرك: {e}")
+        await bot.send_message(chat_id, f"❌ حدث خطأ في المحرك: {e}")
 
 # ==========================================
 # 4. رصد الإجابات
@@ -880,7 +906,6 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 async def check_ans(m: types.Message):
     cid = m.chat.id
     if cid in active_quizzes and active_quizzes[cid]['active']:
-        # مقارنة ذكية تتجاهل المسافات
         if m.text.strip() == active_quizzes[cid]['ans']:
             if not any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners']):
                 active_quizzes[cid]['winners'].append({"name": m.from_user.first_name, "id": m.from_user.id})
@@ -889,4 +914,4 @@ async def check_ans(m: types.Message):
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
-                                                        
+        
