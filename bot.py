@@ -680,14 +680,14 @@ async def start_save(c: types.CallbackQuery, state: FSMContext):
     # نستخدم حالة مخصصة لاستقبال الاسم
     await state.set_state("wait_for_name")
 
+# --- عملية الحفظ المفلترة ---
 @dp.message_handler(state="wait_for_name")
 async def process_quiz_name(message: types.Message, state: FSMContext):
     quiz_name = message.text
     user_id = str(message.from_user.id)
     data = await state.get_data()
     
-    # جلب المعرفات التي اخترتها فعلياً من قائمة selected_cats
-    # قمنا بتحويلها إلى أرقام (int) لضمان توافقها مع سوبابيس
+    # جلب الأقسام المختارة فعلياً (التي بجانبها علامة الصح ✅)
     selected_ids = [int(i) for i in data.get('selected_cats', [])]
 
     if not selected_ids:
@@ -700,7 +700,7 @@ async def process_quiz_name(message: types.Message, state: FSMContext):
         "time_limit": data.get('quiz_time', 15),
         "questions_count": data.get('quiz_count', 10),
         "mode": data.get('quiz_mode', 'السرعة ⚡'),
-        "cats": selected_ids  # سيحفظ الآن المصفوفة المختارة فقط (مثل [57])
+        "cats": selected_ids  # تخزين دقيق للأقسام
     }
     
     try:
@@ -711,6 +711,7 @@ async def process_quiz_name(message: types.Message, state: FSMContext):
         logging.error(f"Save error: {e}")
         await message.answer(f"❌ حدث خطأ أثناء الحفظ.")
 
+# --- عرض المسابقات مع زر الحذف الخاص بك فقط ---
 @dp.message_handler(lambda message: message.text == "مسابقة")
 async def show_quizzes(message: types.Message):
     u_id = str(message.from_user.id)
@@ -720,77 +721,93 @@ async def show_quizzes(message: types.Message):
         await message.answer("⚠️ ليس لديك مسابقات محفوظة باسمك.")
         return
 
-    kb = InlineKeyboardMarkup(row_width=1)
+    kb = InlineKeyboardMarkup(row_width=2) # عرض زرين بجانب بعض (تشغيل وحذف)
     for q in res.data:
-        # نربط الزر بـ ID صاحب الرسالة للحماية
-        kb.add(InlineKeyboardButton(f"🎬 تشغيل: {q['quiz_name']}", callback_data=f"run_{q['id']}_{u_id}"))
+        kb.add(
+            InlineKeyboardButton(f"🎬 تشغيل: {q['quiz_name']}", callback_data=f"run_{q['id']}_{u_id}"),
+            InlineKeyboardButton(f"❌ حذف", callback_data=f"confirm_del_{q['id']}_{u_id}")
+        )
     
-    kb.add(InlineKeyboardButton("⚙️ الأقسام المختارة (قيد التطوير)", callback_data="bot_dev_msg"))
     kb.add(InlineKeyboardButton("❌ إغلاق النافذة", callback_data=f"close_{u_id}"))
-    
     await message.reply(f"🎁 **مسابقاتك المحفوظة يا {message.from_user.first_name}:**", reply_markup=kb)
-    
+
 # ==========================================
-# 1. حماية الأزرار والتشغيل الموحد
+# 1. حماية الأزرار، التشغيل الموحد، والحذف التأكيدي
 # ==========================================
-@dp.callback_query_handler(lambda c: c.data.startswith(('run_', 'close_')))
-async def handle_secure(c: types.CallbackQuery):
+@dp.callback_query_handler(lambda c: c.data.startswith(('run_', 'close_', 'confirm_del_', 'final_del_', 'cancel_del')))
+async def handle_secure_actions(c: types.CallbackQuery):
     try:
         data_parts = c.data.split('_')
         owner_id = data_parts[-1]
+        user_id = str(c.from_user.id)
 
-        if str(c.from_user.id) != owner_id:
+        # حماية الخصوصية: لا يلمس الأزرار إلا صاحبها
+        if user_id != owner_id and not c.data.startswith('cancel_del'):
             await c.answer("🚫 لا يسمح لك بلمس أزرار غيرك!", show_alert=True)
             return
 
+        # --- حالة: إغلاق النافذة ---
         if "close" in c.data:
             await c.message.delete()
             return
 
-        await c.answer("🚀 استعد.. بدأت الإثارة!")
-        quiz_id = data_parts[1]
-        
-        # جلب البيانات من Supabase
-        res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
-        q_data = res.data
-        
-        if not q_data:
-            await c.message.edit_text("❌ خطأ: لم يتم العثور على المسابقة!")
+        # --- حالة: طلب تأكيد الحذف ---
+        if c.data.startswith('confirm_del_'):
+            quiz_id = data_parts[2]
+            kb = InlineKeyboardMarkup(row_width=2)
+            kb.add(
+                InlineKeyboardButton("✅ نعم، احذف", callback_data=f"final_del_{quiz_id}_{user_id}"),
+                InlineKeyboardButton("🚫 تراجع", callback_data=f"cancel_del_{user_id}")
+            )
+            await c.message.edit_text("⚠️ **هل أنت متأكد من حذف هذه المسابقة نهائياً؟**", reply_markup=kb)
             return
 
-        # تشغيل العد التنازلي
-        await countdown_timer(c.message, 5)
-        
-        # --- استخراج الأقسام من عمود cats ---
-        import json
-        raw_cats = q_data.get('cats') or q_data.get('categories') or []
-        
-        try:
-            if isinstance(raw_cats, str):
-                cats = json.loads(raw_cats)
-            else:
-                cats = raw_cats
-        except:
-            cats = raw_cats
+        # --- حالة: التراجع عن الحذف ---
+        if c.data.startswith('cancel_del'):
+            await c.message.delete()
+            await show_quizzes(c.message)
+            return
 
-        # تجهيز الإعدادات للمحرك
-        quiz_config = {
-            'cats': cats if isinstance(cats, list) else [cats],
-            'questions_count': int(q_data.get('questions_count', 10)),
-            'time_limit': int(q_data.get('time_limit', 15)),
-            'mode': q_data.get('quiz_mode', 'عادي'),
-            'quiz_name': q_data.get('quiz_name', 'مسابقة')
-        }
-        
-        await c.message.edit_text(f"🏁 **انطلقت الآن: {quiz_config['quiz_name']}**")
-        
-        # استدعاء المحرك المطور
-        await start_quiz_engine(c.message.chat.id, quiz_config, c.from_user.first_name)
+        # --- حالة: الحذف النهائي من Supabase ---
+        if c.data.startswith('final_del_'):
+            quiz_id = data_parts[2]
+            supabase.table("saved_quizzes").delete().eq("id", quiz_id).eq("created_by", user_id).execute()
+            await c.answer("✅ تم الحذف بنجاح!", show_alert=True)
+            await c.message.delete()
+            await show_quizzes(c.message)
+            return
+
+        # --- حالة: تشغيل المسابقة (المنطق القديم) ---
+        if c.data.startswith('run_'):
+            await c.answer("🚀 استعد.. بدأت الإثارة!")
+            quiz_id = data_parts[1]
+            res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
+            q_data = res.data
+            
+            if not q_data:
+                await c.message.edit_text("❌ خطأ: لم يتم العثور على المسابقة!")
+                return
+
+            await countdown_timer(c.message, 5)
+            
+            # استخراج الأقسام المختارة فعلياً من العمود cats
+            cats = q_data.get('cats') or []
+            
+            quiz_config = {
+                'cats': cats if isinstance(cats, list) else [cats],
+                'questions_count': int(q_data.get('questions_count', 10)),
+                'time_limit': int(q_data.get('time_limit', 15)),
+                'mode': q_data.get('quiz_mode', 'عادي'),
+                'quiz_name': q_data.get('quiz_name', 'مسابقة')
+            }
+            
+            await c.message.edit_text(f"🏁 **انطلقت الآن: {quiz_config['quiz_name']}**")
+            await start_quiz_engine(c.message.chat.id, quiz_config, c.from_user.first_name)
             
     except Exception as e:
-        logging.error(f"Error in handle_secure: {e}")
+        logging.error(f"Error in handle_secure_actions: {e}")
         await c.message.reply(f"⚠️ تنبيه فني: {e}")
-
+        
 # ==========================================
 # 2. محركات التصميم والزخرفة
 # ==========================================
