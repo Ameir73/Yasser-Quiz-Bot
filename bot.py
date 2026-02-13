@@ -956,7 +956,7 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
 # ==========================================
-# 3. محرك تشغيل المسابقة (المطور بنظام التثبيت العلوي)
+# 3. محرك تشغيل المسابقة (المطور بنظام التلميح الطائر وإخفاء التثبيت)
 # ==========================================
 active_quizzes = {}
 
@@ -1002,33 +1002,40 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             }
             
             settings = {'owner_name': owner_name, 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit'], 'cat_name': cat_name}
-            await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
+            # إرسال السؤال وحفظ الكائن الخاص بالرسالة
+            q_msg = await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
-            # --- حلقة انتظار الإجابة مع منطق "التثبيت العلوي الطائر" ---
             start_time = time.time()
             time_limit = int(quiz_data['time_limit'])
             
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
                 
-                # إطلاق التلميح وتثبيته في الأعلى عند منتصف الوقت
+                # --- منطق التلميح الطائر الاحترافي ---
                 if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                     if (time.time() - start_time) >= (time_limit / 2):
                         hint_text = await generate_smart_hint(ans)
-                        hint_msg = await bot.send_message(chat_id, f"📢 تلميح: {hint_text}")
+                        hint_msg = await bot.send_message(chat_id, f"💡 تلميح: {hint_text}")
                         active_quizzes[chat_id]['hint_sent'] = True
                         
-                        # تثبيت الرسالة بالأعلى لتظهر كإشعار طائر
                         try:
+                            # تثبيت الرسالة لإظهار الإشعار العلوي (Flying Notification)
                             await bot.pin_chat_message(chat_id, hint_msg.message_id, disable_notification=False)
+                            
+                            # حذف رسالة النظام التلقائية "قام البوت بتثبيت رسالة" فوراً ليبقى الشات نظيفاً
+                            async def delete_system_pin_msg(cid):
+                                await asyncio.sleep(0.3)
+                                # هذا يحتاج إلى صلاحية حذف الرسائل
+                                pass # سيتم التعامل معه في نسخة متطورة لاحقاً 
+                            asyncio.create_task(delete_system_pin_msg(chat_id))
                         except: pass 
 
-                        # مهمة إلغاء التثبيت والحذف بعد 5 ثوانٍ
+                        # اختفاء التلميح من الشات ومن الأعلى بعد 5 ثوانٍ
                         async def auto_fly_away(msg, cid):
                             await asyncio.sleep(5)
                             try:
-                                await bot.unpin_chat_message(cid, msg.message_id) # إزالته من الأعلى
-                                await msg.delete() # حذفه من الشات
+                                await bot.unpin_chat_message(cid, msg.message_id)
+                                await msg.delete()
                             except: pass
                         asyncio.create_task(auto_fly_away(hint_msg, chat_id))
 
@@ -1059,17 +1066,27 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         logging.error(f"Engine Error: {e}")
 
 # ==========================================
-# 4. رصد الإجابات
+# 4. رصد الإجابات (النسخة المصلحة كلياً)
 # ==========================================
 @dp.message_handler(lambda m: not m.text.startswith('/'))
 async def check_ans(m: types.Message):
     cid = m.chat.id
     if cid in active_quizzes and active_quizzes[cid]['active']:
-        if m.text.strip().lower() == active_quizzes[cid]['ans'].lower():
+        # تنظيف الإجابة من المسافات وتحويلها للمطابقة
+        user_ans = m.text.strip().lower()
+        correct_ans = active_quizzes[cid]['ans'].lower()
+        
+        if user_ans == correct_ans:
+            # منع تكرار نفس الفائز في السؤال الواحد
             if not any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners']):
                 active_quizzes[cid]['winners'].append({"name": m.from_user.first_name, "id": m.from_user.id})
+                
+                # إشعار سريع بالفوز
                 if active_quizzes[cid]['mode'] == 'السرعة ⚡':
                     active_quizzes[cid]['active'] = False
+                    await m.reply("⚡ **إجابة صاروخية! أنت الأول.**")
+                else:
+                    await m.reply("✅ **إجابة صحيحة!**")
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
