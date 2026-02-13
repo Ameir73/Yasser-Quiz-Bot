@@ -739,9 +739,9 @@ async def show_quizzes(obj):
     else: await obj.message.edit_text(title, reply_markup=kb)
 
 # ==========================================
-# [2] المحرك الأمني ولوحة التحكم الشاملة (نسخة ياسر المحدثة)
+# [2] المحرك الأمني ولوحة التحكم الشاملة (نسخة التلميح الذكي)
 # ==========================================
-@dp.callback_query_handler(lambda c: c.data.startswith(('run_', 'close_', 'confirm_del_', 'final_del_', 'edit_time_', 'set_t_', 'manage_quiz_', 'quiz_settings_', 'back_to_list', 'bot_dev_msg', 'edit_count_', 'set_c_', 'toggle_speed_', 'toggle_scope_')))
+@dp.callback_query_handler(lambda c: c.data.startswith(('run_', 'close_', 'confirm_del_', 'final_del_', 'edit_time_', 'set_t_', 'manage_quiz_', 'quiz_settings_', 'back_to_list', 'bot_dev_msg', 'edit_count_', 'set_c_', 'toggle_speed_', 'toggle_scope_', 'toggle_hint_')))
 async def handle_secure_actions(c: types.CallbackQuery):
     try:
         data_parts = c.data.split('_')
@@ -777,6 +777,10 @@ async def handle_secure_actions(c: types.CallbackQuery):
             
             current_scope = q.get('quiz_scope', 'خاص')
             scope_label = "🔒 مسابقة قروب" if current_scope == "خاص" else "🌐 مسابقة عامة"
+
+            # زر التلميح الذكي الجديد
+            is_hint_on = q.get('smart_hint', False)
+            hint_label = "💡 تلميح ذكي: مفعل" if is_hint_on else "💡 تلميح ذكي: معطل"
             
             kb = InlineKeyboardMarkup(row_width=2)
             kb.add(
@@ -787,10 +791,23 @@ async def handle_secure_actions(c: types.CallbackQuery):
                 InlineKeyboardButton(speed_label, callback_data=f"toggle_speed_{quiz_id}_{user_id}"),
                 InlineKeyboardButton(scope_label, callback_data=f"toggle_scope_{quiz_id}_{user_id}")
             )
+            # إضافة زر التلميح في صف منفصل
+            kb.add(InlineKeyboardButton(hint_label, callback_data=f"toggle_hint_{quiz_id}_{user_id}"))
+            
             kb.add(InlineKeyboardButton("🗑️ حذف المسابقة", callback_data=f"confirm_del_{quiz_id}_{user_id}"))
             kb.add(InlineKeyboardButton("🔙 رجوع للخلف", callback_data=f"manage_quiz_{quiz_id}_{user_id}"))
             
             await c.message.edit_text(f"⚙️ **إعدادات المسابقة: {q['quiz_name']}**\nتحكم في طريقة عمل مسابقتك الخاصة:", reply_markup=kb)
+            return
+
+        # --- تفعيل/تعطيل التلميح الذكي (Smart Hint) ---
+        if c.data.startswith('toggle_hint_'):
+            quiz_id = data_parts[2]
+            res = supabase.table("saved_quizzes").select("smart_hint").eq("id", quiz_id).single().execute()
+            new_val = not res.data.get('smart_hint', False)
+            supabase.table("saved_quizzes").update({"smart_hint": new_val}).eq("id", quiz_id).execute()
+            await c.answer("✅ تفعيل التلميح" if new_val else "❌ تعطيل التلميح")
+            await handle_secure_actions(c)
             return
 
         # --- تعديل عدد الأسئلة (الخيارات: 5، 10، 15، 20، 30، 40) ---
@@ -835,19 +852,18 @@ async def handle_secure_actions(c: types.CallbackQuery):
             new_mode = "الوقت ⏳" if res.data['mode'] == "السرعة ⚡" else "السرعة ⚡"
             supabase.table("saved_quizzes").update({"mode": new_mode}).eq("id", quiz_id).execute()
             await c.answer(f"🔄 تم التغيير إلى: {new_mode}")
-            await handle_secure_actions(c) # لتحديث الاسم في الزر فوراً
+            await handle_secure_actions(c) 
             return
 
         if c.data.startswith('toggle_scope_'):
             quiz_id = data_parts[2]
             res = supabase.table("saved_quizzes").select("quiz_scope").eq("id", quiz_id).single().execute()
-            # تبديل الحالة بين خاص وعام
             old_scope = res.data.get('quiz_scope', 'خاص')
             new_scope = "عام" if old_scope == "خاص" else "خاص"
             supabase.table("saved_quizzes").update({"quiz_scope": new_scope}).eq("id", quiz_id).execute()
             msg = "🌐 النوع الجديد: عام" if new_scope == "عام" else "🔒 النوع الجديد: قروب"
             await c.answer(msg)
-            await handle_secure_actions(c) # لتحديث الاسم في الزر فوراً
+            await handle_secure_actions(c) 
             return
 
         # --- نظام الرجوع والحذف والتشغيل ---
@@ -866,7 +882,8 @@ async def handle_secure_actions(c: types.CallbackQuery):
                 'questions_count': int(q_data.get('questions_count', 10)),
                 'time_limit': int(q_data.get('time_limit', 15)),
                 'mode': q_data.get('mode', 'السرعة ⚡'),
-                'quiz_name': q_data.get('quiz_name', 'مسابقة')
+                'quiz_name': q_data.get('quiz_name', 'مسابقة'),
+                'smart_hint': q_data.get('smart_hint', False) # إضافة حالة التلميح للإعدادات المشغلة
             }
             await c.message.edit_text(f"🏁 **انطلقت الآن: {quiz_config['quiz_name']}**")
             await start_quiz_engine(c.message.chat.id, quiz_config, c.from_user.first_name)
