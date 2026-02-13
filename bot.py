@@ -916,7 +916,7 @@ async def handle_secure_actions(c: types.CallbackQuery):
         logging.error(f"Error in Secure Logic: {e}")
                                                         
 # ==========================================
-# 2. محركات التصميم والزخرفة والتلميح (نسخة الرسائل الطائرة)
+# 2. محركات التصميم والزخرفة والتلميح (نسخة الإشعارات العلوية الطائرة)
 # ==========================================
 async def countdown_timer(message: types.Message, seconds=5):
     try:
@@ -932,15 +932,15 @@ async def generate_smart_hint(answer_text):
     words = answer_text.split()
     if len(words) == 1:
         if len(answer_text) <= 3:
-            return f"💡 **تلميح سريع:** يبدأ بحرف ( {answer_text[0]} )"
-        return f"💡 **تلميح سريع:** يبدأ بـ ( {answer_text[:2]} ) وينتهي بـ ( {answer_text[-1]} )"
+            return f"💡 يبدأ بحرف ( {answer_text[0]} )"
+        return f"💡 يبدأ بـ ( {answer_text[:2]} ) وينتهي بـ ( {answer_text[-1]} )"
     else:
         prompt = f"أعطني تلميحاً ذكياً وقصيراً جداً عن ({answer_text}) دون ذكر أي كلمة من الإجابة."
         try:
             ai_hint = await call_gemini_ai(prompt) 
-            return f"💡 **تلميح ذكي:** {ai_hint}"
+            return f"💡 تلميح ذكي: {ai_hint}"
         except:
-            return f"💡 **تلميح:** الإجابة {len(words)} كلمات، تبدأ بـ ( {answer_text[:2]} )"
+            return f"💡 {len(words)} كلمات، تبدأ بـ ( {answer_text[:2]} )"
 
 async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     text = (
@@ -956,7 +956,7 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
 # ==========================================
-# 3. محرك تشغيل المسابقة (المطور بنظام التلميح الطائر)
+# 3. محرك تشغيل المسابقة (المطور بنظام التثبيت العلوي)
 # ==========================================
 active_quizzes = {}
 
@@ -1004,26 +1004,33 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             settings = {'owner_name': owner_name, 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit'], 'cat_name': cat_name}
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
-            # --- حلقة انتظار الإجابة مع منطق "التلميح الطائر" ---
+            # --- حلقة انتظار الإجابة مع منطق "التثبيت العلوي الطائر" ---
             start_time = time.time()
             time_limit = int(quiz_data['time_limit'])
             
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
                 
-                # إطلاق التلميح الطائر عند منتصف الوقت
+                # إطلاق التلميح وتثبيته في الأعلى عند منتصف الوقت
                 if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                     if (time.time() - start_time) >= (time_limit / 2):
                         hint_text = await generate_smart_hint(ans)
-                        hint_msg = await bot.send_message(chat_id, f"{hint_text}\n*(سيختفي هذا التلميح خلال 5 ثوانٍ! ⏳)*")
+                        hint_msg = await bot.send_message(chat_id, f"📢 تلميح: {hint_text}")
                         active_quizzes[chat_id]['hint_sent'] = True
                         
-                        # مهمة حذف التلميح في الخلفية دون تعطيل البوت
-                        async def auto_delete_hint(msg, delay):
-                            await asyncio.sleep(delay)
-                            try: await msg.delete()
+                        # تثبيت الرسالة بالأعلى لتظهر كإشعار طائر
+                        try:
+                            await bot.pin_chat_message(chat_id, hint_msg.message_id, disable_notification=False)
+                        except: pass 
+
+                        # مهمة إلغاء التثبيت والحذف بعد 5 ثوانٍ
+                        async def auto_fly_away(msg, cid):
+                            await asyncio.sleep(5)
+                            try:
+                                await bot.unpin_chat_message(cid, msg.message_id) # إزالته من الأعلى
+                                await msg.delete() # حذفه من الشات
                             except: pass
-                        asyncio.create_task(auto_delete_hint(hint_msg, 5))
+                        asyncio.create_task(auto_fly_away(hint_msg, chat_id))
 
                 if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
                     break
