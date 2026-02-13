@@ -997,7 +997,7 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
 # ==========================================
-# 3. محرك تشغيل المسابقة (المطور بنظام التلميح الطائر وإخفاء التثبيت)
+# 3. محرك تشغيل المسابقة (المطور بتصاميم ياسر الملكية)
 # ==========================================
 active_quizzes = {}
 
@@ -1023,7 +1023,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             await bot.send_message(chat_id, "⚠️ لم أجد أسئلة كافية في هذه الأقسام حالياً.")
             return
 
-        welcome_msg = await bot.send_message(chat_id, f"🎯 **استعدوا للمنافسة!**\n📂 الأقسام: {names_str}\n🔢 الأسئلة: {len(questions)}")
+        await bot.send_message(chat_id, f"🎯 <b>استعدوا للمنافسة!</b>\n📂 الأقسام: {names_str}\n🔢 الأسئلة: {len(questions)}")
         await asyncio.sleep(3)
 
         random.shuffle(questions)
@@ -1043,8 +1043,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             }
             
             settings = {'owner_name': owner_name, 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit'], 'cat_name': cat_name}
-            # إرسال السؤال وحفظ الكائن الخاص بالرسالة
-            q_msg = await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
+            await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
             start_time = time.time()
             time_limit = int(quiz_data['time_limit'])
@@ -1052,88 +1051,92 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
                 
-# --- [منطق التلميح الطائر الحقيقي: بدون تثبيت وبدون أثر نجوم] ---
+                # --- [منطق التلميح الطائر: 5 ثوانٍ لضمان القراءة] ---
                 if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                     if (time.time() - start_time) >= (time_limit / 2):
-                        hint_text = await generate_smart_hint(ans) # ذكاء اصطناعي
-                        
-                        # إرسال التلميح بنظام HTML لضمان عدم ظهور النجوم
+                        hint_text = await generate_smart_hint(ans) 
                         hint_msg = await bot.send_message(chat_id, f"💡 <b>تلميح:</b> {hint_text}", parse_mode="HTML")
                         active_quizzes[chat_id]['hint_sent'] = True
                         
-                        # الحذف الفوري ليبقى الإشعار طائراً بالأعلى فقط بدون أثر رسالة تثبيت
                         async def fly_and_delete(msg):
-                            await asyncio.sleep(0.5) 
-                            try:
-                                await msg.delete()
+                            await asyncio.sleep(5) 
+                            try: await msg.delete()
                             except: pass
                         asyncio.create_task(fly_and_delete(hint_msg))
 
                 if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
                     break
 
-            # --- نهاية السؤال ورصد النقاط ---
+            # --- نهاية السؤال: استدعاء تصميم ياسر الإبداعي ---
             active_quizzes[chat_id]['active'] = False
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
 
-            # استخدام <b> بدلاً من النجوم للخط العريض
-            await bot.send_message(chat_id, f"✅ الإجابة الصحيحة هي: <b>{ans}</b>", parse_mode="HTML")
+            # استخدام الدالة التي أضفناها في الخطوة الأولى
+            await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
             await asyncio.sleep(2)
 
-        # النتائج النهائية
-        leaderboard = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)
-        results_text = "🏆 <b>جدول الترتيب النهائي:</b>\n\n"
-        
-        if not leaderboard:
-            results_text += "لم ينجح أحد! ❌"
-        else:
-            for idx, player in enumerate(leaderboard):
-                medal = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else "👤"
-                results_text += f"{medal} {player['name']} — {player['points']} نقطة\n"
-
-        await bot.send_message(chat_id, results_text, parse_mode="HTML")
+        # --- ختام المسابقة: استدعاء تصميم ياسر النهائي ---
+        await send_final_results(chat_id, overall_scores, len(questions))
         
     except Exception as e:
         logging.error(f"Engine Error: {e}")
 
 # ==========================================
-# 4. رصد الإجابات (نسخة HTML الصافية)
+# 4. رصد الإجابات (التصميم الملكي الموحد - ياسر)
 # ==========================================
 @dp.message_handler(lambda m: not m.text.startswith('/'))
 async def check_ans(m: types.Message):
     cid = m.chat.id
-    # التأكد من وجود مسابقة نشطة
     if cid in active_quizzes and active_quizzes[cid]['active']:
-        # تنظيف الإجابة وتحويلها للمطابقة
         user_ans = m.text.strip().lower()
         correct_ans = active_quizzes[cid]['ans'].lower()
         
         if user_ans == correct_ans:
-            # منع تكرار نفس الفائز في السؤال الواحد
             if not any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners']):
                 active_quizzes[cid]['winners'].append({"name": m.from_user.first_name, "id": m.from_user.id})
                 
-                # الرد باستخدام HTML لضمان الخط العريض بدون نجوم
+                # --- تصميم رسالة التأكيد (قالب ياسر) ---
                 if active_quizzes[cid]['mode'] == 'السرعة ⚡':
                     active_quizzes[cid]['active'] = False
-                    await m.reply("⚡ <b>إجابة صاروخية! أنت الأول.</b>", parse_mode="HTML")
+                    confirm_msg = (
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        "⚡ <b>إجـابـة صـاروخـيـة!</b>\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"👤 الـبـطـل: <b>{m.from_user.first_name}</b>\n"
+                        "🥇 لـقـد حسمت المركز الأول فوراً!\n"
+                        "━━━━━━━━━━━━━━━━━━━━━"
+                    )
                 else:
-                    await m.reply("✅ <b>إجابة صحيحة!</b>", parse_mode="HTML")
+                    confirm_msg = (
+                        "━━━━━━━━━━━━━━\n"
+                        "✅ <b>تـم تـسـجـيـل الإجـابة!</b>\n"
+                        "━━━━━━━━━━━━━━\n"
+                        f"👤 الـمـتسـابـق: <b>{m.from_user.first_name}</b>\n"
+                        "🏆 نـقـاطـك: +10 نـقـاط\n"
+                        "━━━━━━━━━━━━━━"
+                    )
+                await m.reply(confirm_msg, parse_mode="HTML")
 
 # ==========================================
-# نهاية الملف: ضمان التشغيل 24/7 على Render
+# 5. نهاية الملف: ضمان التشغيل 24/7 على Render
 # ==========================================
+from aiohttp import web
+
+async def handle_ping(request):
+    return web.Response(text="Bot is Active!")
+
 if __name__ == '__main__':
-    from aiogram import executor
-    import logging
+    # إعداد سيرفر صغير للرد على Cron-job لضمان استمرار البوت
+    app = web.Application()
+    app.router.add_get('/', handle_ping)
+    loop = asyncio.get_event_loop()
+    runner = web.AppRunner(app)
+    loop.run_until_complete(runner.setup())
+    # بورت 10000 المتوافق مع Render
+    site = web.TCPSite(runner, '0.0.0.0', 10000)
+    loop.create_task(site.start())
 
-    # إعداد السجلات لمراقبة أداء البوت في Render
     logging.basicConfig(level=logging.INFO)
-    
-    # ضبط البوت ليعتمد HTML كطريقة عرض أساسية (يمنع ظهور النجوم **)
-    bot.parse_mode = "HTML"
-    
-    # تشغيل البوت بنظام Polling مستمر 
-    # skip_updates=True تمنع البوت من الانهيار بسبب تراكم الرسائل القديمة
+    bot.parse_mode = "HTML" 
     executor.start_polling(dp, skip_updates=True)
