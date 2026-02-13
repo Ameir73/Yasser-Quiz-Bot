@@ -19,10 +19,51 @@ MY_TELEGRAM_URL = "https://t.me/Ya_79k"
 # الربط بسوبابيس
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# إعداد البوت
-bot = Bot(token=API_TOKEN, parse_mode="Markdown")
+# إعداد البوت بنظام HTML لضمان جمال التنسيق ومنع النجوم
+bot = Bot(token=API_TOKEN, parse_mode="HTML")
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
+
+# ==========================================
+# 🟢 قوالب تصميمات ياسر الملكية (الإصدار الجديد)
+# ==========================================
+
+async def send_creative_results(chat_id, correct_ans, winners, overall_scores):
+    """تصميم ياسر لرسالة الإجابة بعد كل سؤال"""
+    msg =  "━━━━━━━━━━━━━━━━━━━━━\n"
+    msg += f"✅ الإجابة الصحيحة: <b>{correct_ans}</b>\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "━━━━ من أجاب صح ✅ ━━━━\n"
+    msg += "👤 الاسم | 🏆 النقاط\n"
+    for i, w in enumerate(winners, 1):
+        msg += f"{i}- {w['name']} (+10)\n"
+    
+    leaderboard = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)
+    msg += "\n━━━━ الترتيب العام للمسابقة ━━━━\n"
+    medals = ["🥇", "🥈", "🥉"]
+    for i, player in enumerate(leaderboard[:3]):
+        medal = medals[i] if i < 3 else "👤"
+        msg += f"{medal} {player['name']} - {player['points']}\n"
+    await bot.send_message(chat_id, msg, parse_mode="HTML")
+
+async def send_final_results(chat_id, overall_scores, correct_count):
+    """تصميم ياسر لرسالة ختام المسابقة"""
+    msg =  "━━━━━━━━━━━━━━━━━━━━━\n"
+    msg += "🏁 <b>انـتـهـت الـمـسـابـقـة بنجاح!</b> 🏁\n"
+    msg += "شكرًا لكل من شارك وأمتعنا بمنافسته. 🌹\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "━━━━ 🥇 الـفـائـزون بـالـمـراكز الأولى 🥇 ━━━━\n\n"
+    sorted_players = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)
+    medals = ["🥇", "🥈", "🥉"]
+    for i, player in enumerate(sorted_players[:3]):
+        msg += f"{medals[i]} المركز {'الأول' if i==0 else 'الثاني' if i==1 else 'الثالث'}: <b>{player['name']}</b> - [🏆 {player['points']}]\n"
+    msg += "\n━━━━━━━━━━━━━━━━━━━━━\n\n━━━━ 📊 إحصائيات التفاعل 📊 ━━━━\n"
+    msg += f"✅ إجمالي الإجابات الصحيحة: {correct_count}\n\n"
+    msg += "╰──────────────────╯\n"
+    msg += "تهانينا للفائزين وحظاً أوفر لمن لم يحالفه الحظ! ❤️"
+    await bot.send_message(chat_id, msg, parse_mode="HTML")
+
+# ==========================================
 
 class Form(StatesGroup):
     waiting_for_cat_name = State()
@@ -31,8 +72,8 @@ class Form(StatesGroup):
     waiting_for_ans2 = State()
     waiting_for_new_cat_name = State()
     
-last_clicks = {} # للحذف بلمستين
-selected_members = {} # لتخزين اختيارات الأعضاء مؤقتاً
+last_clicks = {} 
+selected_members = {} 
 
 # --- 1. الأوامر الأساسية ---
 @dp.message_handler(commands=['start'])
@@ -47,8 +88,8 @@ async def start_cmd(message: types.Message):
 
 @dp.message_handler(lambda m: m.text == "تحكم")
 async def control_panel(message: types.Message):
-    txt = (f"👋 أهلاً بك في أعدادات المسابقات المطور الخاص ببوت كوين\n"
-           f"👑 المطور: [{OWNER_USERNAME}]({MY_TELEGRAM_URL})")
+    txt = (f"👋 أهلاً بك في أعدادات المسابقات المطور  \n"
+           f"👑 المطور: <b>{OWNER_USERNAME}</b>")
     kb = InlineKeyboardMarkup(row_width=2).add(
         InlineKeyboardButton("📝 إضافة مخصصة", callback_data="custom_add"),
         InlineKeyboardButton("📅 جلسة سابقة", callback_data="dev"),
