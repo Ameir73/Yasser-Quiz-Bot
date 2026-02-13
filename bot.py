@@ -686,19 +686,35 @@ async def process_quiz_name(message: types.Message, state: FSMContext):
     user_id = str(message.from_user.id)
     data = await state.get_data()
     
-    # حفظ في سوبابيس (تأكد من وجود جدول باسم saved_quizzes)
+    # --- التعديل الجذري هنا لفلترة الأقسام المختارة فقط ✅ ---
+    # نأخذ القاموس الذي يحتوي على حالة الصح (True/False) لكل قسم
+    user_selection = data.get('categories', {}) 
+    
+    # نستخرج فقط الـ IDs التي قيمتها True (أي تم اختيارها)
+    selected_cats = [int(cat_id) for cat_id, is_selected in user_selection.items() if is_selected]
+
+    if not selected_cats:
+        await message.answer("⚠️ خطأ: لم تختار أي قسم! ارجع واختار قسم واحد على الأقل قبل الحفظ.")
+        return
+
+    # حفظ في سوبابيس بالبيانات المفلترة
     payload = {
         "created_by": user_id,
         "quiz_name": quiz_name,
         "time_limit": data.get('quiz_time', 15),
         "questions_count": data.get('quiz_count', 10),
         "mode": data.get('quiz_mode', 'السرعة ⚡'),
-        "cats": [cat['id'] for cat in data.get('eligible_cats', [])]
+        "cats": selected_cats  # الآن ستحفظ [57] فقط إذا اخترت حروف
     }
-    supabase.table("saved_quizzes").insert(payload).execute()
     
-    await message.answer(f"✅ **تم حفظ المسابقة ({quiz_name}) بنجاح!**\n\n🚀 لتشغيلها في أي وقت، أرسل كلمة: **مسابقة**")
-    await state.finish()
+    try:
+        supabase.table("saved_quizzes").insert(payload).execute()
+        await message.answer(f"✅ **تم حفظ المسابقة ({quiz_name}) بنجاح!**\n\n🚀 لتشغيلها في أي وقت، أرسل كلمة: **مسابقة**")
+        await state.finish()
+    except Exception as e:
+        logging.error(f"Save error: {e}")
+        await message.answer(f"❌ حدث خطأ أثناء الحفظ: {e}")
+
 @dp.message_handler(lambda message: message.text == "مسابقة")
 async def show_quizzes(message: types.Message):
     u_id = str(message.from_user.id)
@@ -717,6 +733,7 @@ async def show_quizzes(message: types.Message):
     kb.add(InlineKeyboardButton("❌ إغلاق النافذة", callback_data=f"close_{u_id}"))
     
     await message.reply(f"🎁 **مسابقاتك المحفوظة يا {message.from_user.first_name}:**", reply_markup=kb)
+    
 # ==========================================
 # 1. حماية الأزرار والتشغيل الموحد
 # ==========================================
