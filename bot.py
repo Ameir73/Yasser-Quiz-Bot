@@ -1011,26 +1011,22 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
                 
-                                                # --- [منطق التلميح الطائر الحقيقي: إشعار علوي بدون أثر تثبيت] ---
+# --- [منطق التلميح الطائر الحقيقي: بدون تثبيت وبدون أثر نجوم] ---
                 if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                     if (time.time() - start_time) >= (time_limit / 2):
-                        # توليد التلميح عبر الذكاء الاصطناعي بناءً على الإجابة
-                        hint_text = await generate_smart_hint(ans)
+                        hint_text = await generate_smart_hint(ans) # ذكاء اصطناعي
                         
-                        # 1. إرسال الرسالة (هذا سيطلق إشعاراً طائراً لكل الأعضاء في المجموعة)
-                        hint_msg = await bot.send_message(chat_id, f"💡 تلميح: {hint_text}")
+                        # إرسال التلميح بنظام HTML لضمان عدم ظهور النجوم
+                        hint_msg = await bot.send_message(chat_id, f"💡 <b>تلميح:</b> {hint_text}", parse_mode="HTML")
                         active_quizzes[chat_id]['hint_sent'] = True
                         
-                        # 2. حذف الرسالة فوراً (بعد 0.5 ثانية فقط)
-                        # الإشعار سيبقى في أعلى شاشة اللاعب لعدة ثوانٍ لكنه لن يظهر في الشات أبداً
-                        # وبذلك نتخلص نهائياً من جملة "ثبت البوت رسالة"
-                        async def make_it_fly_away(msg, cid):
+                        # الحذف الفوري ليبقى الإشعار طائراً بالأعلى فقط بدون أثر رسالة تثبيت
+                        async def fly_and_delete(msg):
                             await asyncio.sleep(0.5) 
                             try:
-                                await msg.delete() 
+                                await msg.delete()
                             except: pass
-                            
-                        asyncio.create_task(make_it_fly_away(hint_msg, chat_id))
+                        asyncio.create_task(fly_and_delete(hint_msg))
 
                 if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
                     break
@@ -1040,12 +1036,13 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
 
-            await bot.send_message(chat_id, f"✅ الإجابة الصحيحة هي: **{ans}**")
+            # استخدام <b> بدلاً من النجوم للخط العريض
+            await bot.send_message(chat_id, f"✅ الإجابة الصحيحة هي: <b>{ans}</b>", parse_mode="HTML")
             await asyncio.sleep(2)
 
         # النتائج النهائية
         leaderboard = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)
-        results_text = "🏆 **جدول الترتيب النهائي:**\n\n"
+        results_text = "🏆 <b>جدول الترتيب النهائي:</b>\n\n"
         
         if not leaderboard:
             results_text += "لم ينجح أحد! ❌"
@@ -1054,13 +1051,13 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                 medal = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else "👤"
                 results_text += f"{medal} {player['name']} — {player['points']} نقطة\n"
 
-        await bot.send_message(chat_id, results_text)
+        await bot.send_message(chat_id, results_text, parse_mode="HTML")
         
     except Exception as e:
         logging.error(f"Engine Error: {e}")
 
 # ==========================================
-# 4. رصد الإجابات (النسخة المصلحة كلياً)
+# 4. رصد الإجابات (نسخة HTML الصافية)
 # ==========================================
 @dp.message_handler(lambda m: not m.text.startswith('/'))
 async def check_ans(m: types.Message):
@@ -1075,19 +1072,13 @@ async def check_ans(m: types.Message):
                 
                 if active_quizzes[cid]['mode'] == 'السرعة ⚡':
                     active_quizzes[cid]['active'] = False
-                    await m.reply("⚡ **إجابة صاروخية! أنت الأول.**")
+                    await m.reply("⚡ <b>إجابة صاروخية! أنت الأول.</b>", parse_mode="HTML")
                 else:
-                    await m.reply("✅ **إجابة صحيحة!**")
+                    await m.reply("✅ <b>إجابة صحيحة!</b>", parse_mode="HTML")
 
-# --- إصلاح نظام التشغيل لـ Render ---
+# --- أهم جزء لضمان عمل البوت على Render بدون توقف ---
 if __name__ == '__main__':
     from aiogram import executor
-    import logging
-    
-    # تغيير نظام التنسيق لتجنب التحذير في السجلات
-    bot.parse_mode = "HTML" 
-    
-    logging.basicConfig(level=logging.INFO)
-    # البدء بالتشغيل مع تجاهل الرسائل القديمة
+    # ضبط البوت ليتعامل مع HTML بشكل افتراضي
+    bot.parse_mode = "HTML"
     executor.start_polling(dp, skip_updates=True)
-    
