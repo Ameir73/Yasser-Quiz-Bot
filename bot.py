@@ -686,31 +686,39 @@ async def process_quiz_name(message: types.Message, state: FSMContext):
     user_id = str(message.from_user.id)
     data = await state.get_data()
     
-    # --- التعديل الجذري هنا لفلترة الأقسام المختارة فقط ✅ ---
-    # نأخذ القاموس الذي يحتوي على حالة الصح (True/False) لكل قسم
+    # 1. جلب حالة الاختيارات (الصح ✅)
+    # ملاحظة: تأكد أن اسم المفتاح في كود الأزرار هو 'categories'
     user_selection = data.get('categories', {}) 
     
-    # نستخرج فقط الـ IDs التي قيمتها True (أي تم اختيارها)
+    # 2. تصفية الـ IDs المختارة فقط
     selected_cats = [int(cat_id) for cat_id, is_selected in user_selection.items() if is_selected]
 
+    # 💡 إضافة ذكية: إذا لم يجد اختيارات في 'categories'، يبحث في 'eligible_cats' كخيار احتياطي
+    if not selected_cats and 'eligible_cats' in data:
+        selected_cats = [cat['id'] for cat in data.get('eligible_cats', [])]
+
+    # 3. التحقق من وجود أقسام قبل الحفظ
     if not selected_cats:
         await message.answer("⚠️ خطأ: لم تختار أي قسم! ارجع واختار قسم واحد على الأقل قبل الحفظ.")
         return
 
-    # حفظ في سوبابيس بالبيانات المفلترة
+    # 4. تجهيز البيانات (Payload)
     payload = {
         "created_by": user_id,
         "quiz_name": quiz_name,
         "time_limit": data.get('quiz_time', 15),
         "questions_count": data.get('quiz_count', 10),
         "mode": data.get('quiz_mode', 'السرعة ⚡'),
-        "cats": selected_cats  # الآن ستحفظ [57] فقط إذا اخترت حروف
+        "cats": selected_cats  # سيحفظ مصفوفة نظيفة مثل [57]
     }
     
     try:
+        # 5. التنفيذ والحفظ في Supabase
         supabase.table("saved_quizzes").insert(payload).execute()
+        
         await message.answer(f"✅ **تم حفظ المسابقة ({quiz_name}) بنجاح!**\n\n🚀 لتشغيلها في أي وقت، أرسل كلمة: **مسابقة**")
         await state.finish()
+        
     except Exception as e:
         logging.error(f"Save error: {e}")
         await message.answer(f"❌ حدث خطأ أثناء الحفظ: {e}")
