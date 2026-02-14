@@ -805,13 +805,45 @@ async def process_quiz_name(message: types.Message, state: FSMContext):
         logging.error(f"Save error: {e}")
         await message.answer(f"❌ حدث خطأ أثناء الحفظ.")
 
-# --- [1] عرض القائمة الرئيسية (خرافية ومحمية) ---
+# --- [1] عرض القائمة الرئيسية (نظام ياسر المتطور: خاص vs عام) ---
 @dp.message_handler(lambda message: message.text == "مسابقة")
 async def show_quizzes(obj):
+    chat_id = obj.chat.id if isinstance(obj, types.Message) else obj.message.chat.id
     user = obj.from_user
     u_id = str(user.id)
     
-    # جلب المسابقات الخاصة بالمستخدم فقط
+    # 🛡️ فحص الصلاحيات المزدوج
+    status = await get_group_status(chat_id)
+    
+    # 1. التحقق إذا كان المستخدم هو "مالك" أو "مشرف" في القروب (تشغيل خاص)
+    member = await bot.get_chat_member(chat_id, user.id)
+    is_admin_here = member.is_chat_admin() or member.is_chat_creator()
+    
+    # 2. منطق السماح:
+    # يسمح بالدخول في الحالات التالية:
+    # - إذا كنت أنت المطور (ياسر)
+    # - إذا كان القروب مفعل رسمياً (status == 'active')
+    # - إذا كان الشخص مشرفاً ويبي يشغل مسابقاته في قروبه (تشغيل خاص)
+    
+    can_proceed = (
+        chat_id == ADMIN_ID or 
+        status == "active" or 
+        (is_admin_here and chat_id < 0) # chat_id < 0 يعني داخل قروب
+    )
+
+    if not can_proceed:
+        msg = (
+            "━━━━━━━━━━━━━━\n"
+            "⚠️ <b>نظام النشر العام مقفل</b>\n"
+            "━━━━━━━━━━━━━━\n"
+            "عذراً، التشغيل في هذه المجموعة يتطلب تفعيل 'عام'.\n\n"
+            "إذا كنت مشرفاً وتريد تشغيل البوت للجميع، أرسل: (<b>تفعيل</b>).\n"
+            "━━━━━━━━━━━━━━"
+        )
+        if isinstance(obj, types.Message): return await obj.reply(msg, parse_mode="HTML")
+        else: return await obj.message.edit_text(msg, parse_mode="HTML")
+
+    # --- تكملة الكود الطبيعي لعرض المسابقات ---
     res = supabase.table("saved_quizzes").select("*").eq("created_by", u_id).execute()
     kb = InlineKeyboardMarkup(row_width=1)
     
@@ -821,14 +853,13 @@ async def show_quizzes(obj):
         else: await obj.message.edit_text(msg_text)
         return
 
-    # عرض المسابقات مع تشفير معرف المالك u_id في كل زر
     for q in res.data:
         kb.add(InlineKeyboardButton(f"🏆 مسابقة: {q['quiz_name']}", callback_data=f"manage_quiz_{q['id']}_{u_id}"))
     
     kb.add(InlineKeyboardButton("🤖 أسئلة البوت (قيد التطوير)", callback_data=f"bot_dev_msg_{u_id}"))
     kb.add(InlineKeyboardButton("❌ إغلاق النافذة", callback_data=f"close_{u_id}"))
     
-    title = f"🎁 **مسابقاتك المحفوظة يا {user.first_name}:**\nاختر المسابقة لإدارتها أو تعديلها:"
+    title = f"🎁 **قائمة مسابقاتك يا {user.first_name}:**"
     if isinstance(obj, types.Message): await obj.reply(title, reply_markup=kb)
     else: await obj.message.edit_text(title, reply_markup=kb)
 
