@@ -1174,53 +1174,108 @@ async def check_ans(m: types.Message):
 
 @dp.message_handler(commands=['admin'], user_id=ADMIN_ID)
 async def admin_dashboard(message: types.Message):
-    # جلب إحصائيات سريعة من سوبابيس
     res = supabase.table("allowed_groups").select("*").execute()
     groups = res.data
-    
     active = len([g for g in groups if g['status'] == 'active'])
     pending = len([g for g in groups if g['status'] == 'pending'])
     blocked = len([g for g in groups if g['status'] == 'blocked'])
 
     txt = (
         "👑 <b>أهلاً بك يا مطور في غرفة العمليات</b>\n\n"
-        f"📊 <b>إحصائيات المجموعات:</b>\n"
-        f"✅ النشطة: {active}\n"
-        f"⏳ قيد الانتظار: {pending}\n"
-        f"🚫 المحظورة: {blocked}\n"
-        f" مجموع الكل: {len(groups)}\n\n"
+        f"✅ النشطة: {active} | ⏳ المعلقة: {pending} | 🚫 المحظورة: {blocked}\n"
         "👇 اختر قسماً لإدارته:"
     )
-    
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
         InlineKeyboardButton("📝 مراجعة الطلبات المعلقة", callback_data="admin_view_pending"),
         InlineKeyboardButton("📢 إذاعة (نشر عام)", callback_data="admin_broadcast"),
         InlineKeyboardButton("❌ إغلاق", callback_data="close_admin")
     )
-    
     await message.answer(txt, reply_markup=kb, parse_mode="HTML")
 
 # --- معالج عرض الطلبات المعلقة ---
 @dp.callback_query_handler(lambda c: c.data == "admin_view_pending", user_id=ADMIN_ID)
 async def view_pending_groups(callback_query: types.CallbackQuery):
     res = supabase.table("allowed_groups").select("*").eq("status", "pending").execute()
-    
     if not res.data:
         return await callback_query.answer("لا توجد طلبات معلقة حالياً.", show_alert=True)
     
-    txt = "⏳ <b>طلبات التفعيل الحالية:</b>\n\n"
-    kb = InlineKeyboardMarkup(row_width=2)
-    
+    txt = "⏳ <b>طلبات التفعيل الحالية:</b>\n"
+    kb = InlineKeyboardMarkup(row_width=1)
     for g in res.data:
-        txt += f"• {g['group_name']} (<code>{g['group_id']}</code>)\n"
         kb.add(
-            InlineKeyboardButton(f"✅ تفعيل {g['group_name'][:10]}", callback_data=f"auth_approve_{g['group_id']}"),
-            InlineKeyboardButton(f"❌ حظر", callback_data=f"auth_block_{g['group_id']}")
+            InlineKeyboardButton(f"✅ تفعيل: {g['group_name']}", callback_data=f"auth_approve_{g['group_id']}"),
+            InlineKeyboardButton(f"❌ حظر الآيدي: {g['group_id']}", callback_data=f"auth_block_{g['group_id']}")
         )
-    
     kb.add(InlineKeyboardButton("⬅️ العودة", callback_data="admin_back"))
     await callback_query.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
+
+# --- معالج أزرار التفعيل (إصلاح مشكلة الحظر بالخطأ) ---
+@dp.callback_query_handler(lambda c: c.data.startswith(('auth_approve_', 'auth_block_')), user_id=ADMIN_ID)
+async def process_auth_callback(c: types.CallbackQuery):
+    data_parts = c.data.split('_')
+    action = data_parts[1]    # approve أو block
+    target_id = data_parts[2]  # آيدي القروب
+
+    if action == "approve":
+        supabase.table("allowed_groups").update({"status": "active"}).eq("group_id", target_id).execute()
+        await c.answer("تم التفعيل ✅", show_alert=True)
+        await c.message.edit_text(f"✅ <b>تم تفعيل المجموعة بنجاح</b>\nآيدي: <code>{target_id}</code>", parse_mode="HTML")
+        await bot.send_message(target_id, "🎊 <b>مبارك! تم تفعيل القروب.</b> أرسل (مسابقة) للبدء.", parse_mode="HTML")
+    
+    elif action == "block":
+        supabase.table("allowed_groups").update({"status": "blocked"}).eq("group_id", target_id).execute()
+        await c.answer("تم الحظر ❌")
+        await c.message.edit_text(f"❌ <b>تم حظر المجموعة</b>\nآيدي: <code>{target_id}</code>", parse_mode="HTML")
+
+# ==========================================
+# 🛡️ نظام "تحكم" وأمان الأزرار الموحد
+# ==========================================
+
+@dp.message_handler(lambda message: message.text == "تحكم", state="*")
+async def take_control(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if not current_state: return
+    
+    # تحديث المالك في الـ State
+    await state.update_data(owner_id=message.from_user.id, owner_name=message.from_user.first_name)
+    await message.reply(f"🕹️ <b>تم نقل التحكم!</b>\nالآن يا {message.from_user.first_name}، أنت من يدير الإعدادات.")
+
+# دالة مساعدة للتحقق من الأمان (توضع في بداية كل دالة زر)
+async def check_button_security(c: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    owner_id = data.get('owner_id')
+    if owner_id and c.from_user.id != owner_id:
+        owner_name = data.get('owner_name', 'شخص آخر')
+        await c.answer(f"⚠️ التحكم مع {owner_name}\nأرسل (تحكم) لتستطيع الضغط!", show_alert=True)
+        return False
+    return True
+
+# ==========================================
+# 🤖 إضافة الأسئلة لقسم البوت (للمطور فقط)
+# ==========================================
+
+@dp.message_handler(commands=['add_bot'], user_id=ADMIN_ID)
+async def add_bot_question_start(message: types.Message, state: FSMContext):
+    await message.answer("🛠️ <b>إضافة سؤال لقسم البوت الرسمي:</b>\nأرسل السؤال مع الإجابات بهذا الشكل:\n\n<code>السؤال | الإجابة الصحيحة | خطأ1 | خطأ2 | خطأ3 | القسم</code>")
+    await state.set_state("wait_for_bot_q")
+
+@dp.message_handler(state="wait_for_bot_q", user_id=ADMIN_ID)
+async def process_bot_q(message: types.Message, state: FSMContext):
+    try:
+        parts = [p.strip() for p in message.text.split('|')]
+        q, a, w1, w2, w3, cat = parts
+        
+        payload = {
+            "question": q, "correct_answer": a,
+            "wrong_answer1": w1, "wrong_answer2": w2, "wrong_answer3": w3,
+            "category": cat
+        }
+        supabase.table("bot_questions").insert(payload).execute()
+        await message.answer(f"✅ تم إضافة السؤال لقسم [ {cat} ] بنجاح!")
+    except:
+        await message.answer("⚠️ خطأ في التنسيق! تأكد من استخدام الفاصلة | بين الإجابات.")
+    await state.finish()
 
 # ==========================================
 # 5. نهاية الملف: ضمان التشغيل 24/7 على Render
