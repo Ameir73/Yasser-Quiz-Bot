@@ -524,13 +524,13 @@ async def list_categories_for_questions(c: types.CallbackQuery):
         # 1. جلب معرف المستخدم الحالي (للتأكد من خصوصية الأقسام)
         user_id = str(c.from_user.id)
         
-        # --- 1. واجهة تهيئة المسابقة (تم التأكد من أزرار الرجوع) ---
+    # --- 1. واجهة تهيئة المسابقة (متاحة للجميع) ---
 @dp.callback_query_handler(lambda c: c.data == 'setup_quiz', state="*")
 async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
     await state.finish()
     await c.answer()
     
-    # تحديث: حفظ المالك عشان نظام الأمان اللي سويناه قبل قليل
+    # حفظ صاحب الجلسة لنظام الأمان
     await state.update_data(owner_id=c.from_user.id, owner_name=c.from_user.first_name)
     
     text = "🎉 أهلاً بك! قم بتهيئة المسابقة عن طريق اختيار أحد الخيارات التالية:"
@@ -540,52 +540,11 @@ async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
         InlineKeyboardButton("👥 أقسام الأعضاء (اختر من إبداعات الآخرين)", callback_data="members_setup_step1"),
         InlineKeyboardButton("👤 أقسامك الخاصة (التي أنشأتها أنت)", callback_data="my_setup_step1"),
         InlineKeyboardButton("🤖 أقسام البوت (الرسمية)", callback_data="bot_setup_step1"),
-        # هذا الزر يرجعك للشاشة الرئيسية للبوت
-        InlineKeyboardButton("🔙 رجوع خطوة للخلف", callback_data="back_to_start") 
+        InlineKeyboardButton("🔙 رجوع خطوة للخلف", callback_data="start_quiz")
     )
     await c.message.edit_text(text, reply_markup=kb)
 
-# --- 2. معالج الرجوع للشاشة الرئيسية (هذا اللي كان ناقصك) ---
-@dp.callback_query_handler(lambda c: c.data == 'back_to_start', state="*")
-async def process_back_to_start(c: types.CallbackQuery, state: FSMContext):
-    await state.finish()
-    await c.answer()
-    
-    # النص اللي يظهر أول ما تفتح البوت
-    text = f"✨ **أهلاً بك يا {c.from_user.first_name} في بوت المسابقات**\n\nاختر من القائمة أدناه للبدء:"
-    
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(
-        InlineKeyboardButton("🎮 بدء مسابقة جديدة", callback_data="setup_quiz"),
-        InlineKeyboardButton("⚙️ إعدادات أقسامك", callback_data="custom_add_menu"), # عدل هذا حسب اسم دالتك
-        InlineKeyboardButton("📊 لوحة التحكم", callback_data="admin_dashboard") if c.from_user.id == ADMIN_ID else InlineKeyboardButton("ℹ️ معلومات", callback_data="info")
-    )
-    
-    await c.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-
-# --- 3. إصلاح زر الرجوع في قائمة اختيار الأعضاء ---
-def generate_members_keyboard(members, selected_list):
-    kb = InlineKeyboardMarkup(row_width=2)
-    for m in members:
-        m_id = str(m['user_id'])
-        mark = "✅ " if m_id in selected_list else ""
-        kb.insert(InlineKeyboardButton(f"{mark}{m['name']}", callback_data=f"toggle_mem_{m_id}"))
-    
-    kb.add(InlineKeyboardButton("➡️ التالي (اختيار الأقسام)", callback_data="go_to_cats_selection"))
-    # هنا التأكد إن الرجوع يرجع لـ setup_quiz (واجهة الأقسام الثلاثة)
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz")) 
-    return kb
-
-# --- 4. إصلاح زر الرجوع في إدارة أقسامك الخاصة ---
-# أضف هذا المعالج إذا كنت تبي زر "الرجوع" في قائمة "اختر أحد أقسامك" يشتغل
-@dp.callback_query_handler(lambda c: c.data == "custom_add_menu", state="*")
-async def back_to_custom_menu(c: types.CallbackQuery, state: FSMContext):
-    await c.answer()
-    # هنا تضع الكود الخاص بالقائمة السابقة لإدارة الأقسام (إضافة/حذف)
-    await c.message.edit_text("📋 قائمة إدارة الأقسام والأسئلة:", reply_markup=your_custom_menu_kb) 
-    
-
-# --- جلب أقسام البوت الرسمية (جديد) ---
+# --- جلب أقسام البوت الرسمية ---
 @dp.callback_query_handler(lambda c: c.data == 'bot_setup_step1', state="*")
 async def start_bot_selection(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
@@ -662,8 +621,9 @@ async def show_selected_members_cats(c: types.CallbackQuery, state: FSMContext):
 async def render_categories_list(message, eligible_cats, selected_cats):
     kb = InlineKeyboardMarkup(row_width=2)
     for cat in eligible_cats:
-        status = "✅ " if str(cat['id']) in selected_cats else ""
-        kb.insert(InlineKeyboardButton(f"{status}{cat['name']}", callback_data=f"toggle_cat_{cat['id']}"))
+        cat_id_str = str(cat['id'])
+        status = "✅ " if cat_id_str in selected_cats else ""
+        kb.insert(InlineKeyboardButton(f"{status}{cat['name']}", callback_data=f"toggle_cat_{cat_id_str}"))
     if selected_cats:
         kb.add(InlineKeyboardButton(f"➡️ تم اختيار ({len(selected_cats)}) .. الإعدادات", callback_data="final_quiz_settings"))
     kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz"))
@@ -675,8 +635,10 @@ async def toggle_category_selection(c: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     selected = data.get('selected_cats', [])
     eligible = data.get('eligible_cats', [])
-    if cat_id in selected: selected.remove(cat_id)
-    else: selected.append(cat_id)
+    if cat_id in selected: 
+        selected.remove(cat_id)
+    else: 
+        selected.append(cat_id)
     await state.update_data(selected_cats=selected)
     await c.answer()
     await render_categories_list(c.message, eligible, selected)
