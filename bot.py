@@ -627,8 +627,26 @@ async def start_bot_selection(c: types.CallbackQuery, state: FSMContext):
     ) 
     
     # 4. الانتقال فوراً لعرض الأقسام ✅
+    # --- 1.4 - جلب أقسام البوت الرسمية (إضافتك الجديدة) ---
+@dp.callback_query_handler(lambda c: c.data == 'bot_setup_step1', state="*")
+async def start_bot_selection(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    # جلب الأقسام من جدول أسئلة البوت
+    res = supabase.table("bot_questions").select("category").execute()
+    if not res.data:
+        await c.answer("⚠️ لا توجد أقسام رسمية حالياً!", show_alert=True)
+        return
+    
+    # تصفية الأقسام المكررة
+    unique_cats = sorted(list(set([item['category'] for item in res.data])))
+    eligible_cats = [{"id": cat, "name": cat} for cat in unique_cats]
+    
+    # تحديث الذاكرة: نضع is_bot_quiz=True لتظهر الرسالة التعليمية لاحقاً
+    await state.update_data(eligible_cats=eligible_cats, selected_cats=[], is_bot_quiz=True) 
     await render_categories_list(c.message, eligible_cats, [])
-# --- 1.5 - جلب الأقسام الخاصة بالمستخدم ---
+
+# --- 1.5 - جلب الأقسام الخاصة بالمستخدم (كودك الأصلي) ---
+
 @dp.callback_query_handler(lambda c: c.data == 'my_setup_step1', state="*")
 async def start_private_selection(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
@@ -637,10 +655,11 @@ async def start_private_selection(c: types.CallbackQuery, state: FSMContext):
     if not res.data:
         await c.answer("⚠️ ليس لديك أقسام خاصة بك حالياً!", show_alert=True)
         return
+    # هنا is_bot_quiz=False لأنها أقسام خاصة
     await state.update_data(eligible_cats=res.data, selected_cats=[], is_bot_quiz=False) 
     await render_categories_list(c.message, res.data, [])
 
-# --- 2. جلب المبدعين ---
+# --- 2. جلب المبدعين (أقسام الأعضاء) ---
 
 @dp.callback_query_handler(lambda c: c.data == "members_setup_step1", state="*")
 async def start_member_selection(c: types.CallbackQuery, state: FSMContext):
@@ -658,18 +677,20 @@ async def start_member_selection(c: types.CallbackQuery, state: FSMContext):
     await state.update_data(eligible_list=eligible_ids, selected_members=[], is_bot_quiz=False)
     await render_members_list(c.message, eligible_ids, [])
 
-# --- 3. عرض القوائم ---
+# --- 3. عرض قائمة المبدعين ---
+
 async def render_members_list(message, eligible_ids, selected_list):
     kb = InlineKeyboardMarkup(row_width=2)
     for m_id in eligible_ids:
         status = "✅ " if m_id in selected_list else ""
+        # عرض آخر 6 أرقام من المعرف للجمالية
         kb.insert(InlineKeyboardButton(f"{status} المبدع: {str(m_id)[-6:]}", callback_data=f"toggle_mem_{m_id}"))
     if selected_list:
         kb.add(InlineKeyboardButton(f"➡️ تم اختيار ({len(selected_list)}) .. عرض أقسامهم", callback_data="go_to_cats_step"))
     kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz"))
-    await message.edit_text("👥 **أقسام الأعضاء:**", reply_markup=kb)
-
-@dp.callback_query_handler(lambda c: c.data.startswith('toggle_mem_'), state="*")
+    await message.edit_text("👥 **أقسام الأعضاء المبدعين:**", reply_markup=kb)
+    
+    @dp.callback_query_handler(lambda c: c.data.startswith('toggle_mem_'), state="*")
 async def toggle_member(c: types.CallbackQuery, state: FSMContext):
     m_id = c.data.replace('toggle_mem_', '')
     data = await state.get_data()
