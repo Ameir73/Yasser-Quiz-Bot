@@ -39,19 +39,19 @@ dp = Dispatcher(bot, storage=storage)
 
 async def send_creative_results(chat_id, correct_ans, winners, overall_scores):
     """تصميم ياسر المطور: دمج الفائزين والترتيب في رسالة واحدة"""
-    msg =  "━━━━━━━━━━━━━━━━━━━━━\n"
+    msg =  "━━━━━━━━━━━━━━━━━━━━\n"
     msg += f"✅ الإجابة الصحيحة: <b>{correct_ans}</b>\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
     
     if winners:
-        msg += "━━━━ أبطال هذا السؤال ✅ ━━━━\n"
+        msg += "━ أبطال هذا السؤال ✅ ━\n"
         for i, w in enumerate(winners, 1):
             msg += f"{i}- {w['name']} (+10)\n"
     else:
         msg += "❌ لم ينجح أحد في الإجابة على هذا السؤال\n"
     
     leaderboard = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)
-    msg += "\n━━━━ 🏆 الترتيب العام للمسابقة ━━━━\n"
+    msg += "\n━ 🏆 الترتيب العام للمسابقة ━\n"
     medals = ["🥇", "🥈", "🥉"]
     for i, player in enumerate(leaderboard[:3]):
         medal = medals[i] if i < 3 else "👤"
@@ -61,10 +61,10 @@ async def send_creative_results(chat_id, correct_ans, winners, overall_scores):
     
 async def send_final_results(chat_id, overall_scores, correct_count):
     """تصميم ياسر لرسالة ختام المسابقة"""
-    msg =  "━━━━━━━━━━━━━━━━━━━━━\n"
+    msg =  "━━━━━━━━━━━━━━━━━━━━\n"
     msg += "🏁 <b>انـتـهـت الـمـسـابـقـة بنجاح!</b> 🏁\n"
     msg += "شكرًا لكل من شارك وأمتعنا بمنافسته. 🌹\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
     msg += "━━━━ 🥇 الـفـائـزون بـالـمـراكز الأولى 🥇 ━━━━\n\n"
     sorted_players = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)
     medals = ["🥇", "🥈", "🥉"]
@@ -177,11 +177,37 @@ async def process_auth_callback(callback_query: types.CallbackQuery):
         await bot.send_message(target_id, "🚫 **نعتذر، تم رفض طلب تفعيل البوت في هذا القروب.**")
 
 # --- 2. إدارة الأقسام والأسئلة ---
-# هنا نبدأ كود إضافة الأسئلة لقسم البوت...
-# --- 2. إدارة الأقسام والأسئلة (مصلح لعيون ياسر) ---
+# ========================================
+# السطر اللي بتلصقه (معالج الرجوع)
+# ==========================================
+
+@dp.callback_query_handler(lambda c: c.data == 'start_quiz', state="*")
+async def back_to_main_panel(c: types.CallbackQuery, state: FSMContext):
+    await state.finish() 
+    await c.answer()
+    
+    txt = (f"👋 أهلاً بك في أعدادات المسابقات المطور  \n"
+           f"👑 المطور: <b>{OWNER_USERNAME}</b>")
+           
+    kb = InlineKeyboardMarkup(row_width=2).add(
+        InlineKeyboardButton("📝 إضافة مخصصة", callback_data="custom_add"),
+        InlineKeyboardButton("📅 جلسة سابقة", callback_data="dev"),
+        InlineKeyboardButton("🏆 تهيئة مسابقة", callback_data="setup_quiz"),
+        InlineKeyboardButton("📊 لوحة الصدارة", callback_data="leaderboard"),
+        InlineKeyboardButton("🛑 إغلاق", callback_data="close_bot")
+    )
+    
+    try:
+        await c.message.edit_text(txt, reply_markup=kb, disable_web_page_preview=True)
+    except:
+        await c.message.answer(txt, reply_markup=kb, disable_web_page_preview=True)
+
+# ==========================================
+# الكود اللي موجود عندك أصلاً (إدارة الأقسام)
+# ==========================================
 @dp.callback_query_handler(lambda c: c.data == 'custom_add')
 async def custom_add_menu(c: types.CallbackQuery):
-    await c.answer() # لإلغاء تعليق الزر فوراً
+    await c.answer()
     kb = InlineKeyboardMarkup(row_width=1).add(
         InlineKeyboardButton("➕ إضافة قسم جديد", callback_data="add_new_cat"),
         InlineKeyboardButton("📋 قائمة الأقسام", callback_data="list_cats"),
