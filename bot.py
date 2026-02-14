@@ -1194,6 +1194,61 @@ async def check_ans(m: types.Message):
                 if active_quizzes[cid]['mode'] == 'السرعة ⚡':
                     active_quizzes[cid]['active'] = False
                     # في نظام السرعة، السؤال ينتهي فوراً عند أول إجابة صحيحة
+
+# ==========================================
+# 👑 لوحة تحكم المطور (ياسر) - إدارة المجموعات
+# ==========================================
+
+@dp.message_handler(commands=['admin'], user_id=ADMIN_ID)
+async def admin_dashboard(message: types.Message):
+    # جلب إحصائيات سريعة من سوبابيس
+    res = supabase.table("allowed_groups").select("*").execute()
+    groups = res.data
+    
+    active = len([g for g in groups if g['status'] == 'active'])
+    pending = len([g for g in groups if g['status'] == 'pending'])
+    blocked = len([g for g in groups if g['status'] == 'blocked'])
+
+    txt = (
+        "👑 <b>أهلاً بك يا مطور في غرفة العمليات</b>\n\n"
+        f"📊 <b>إحصائيات المجموعات:</b>\n"
+        f"✅ النشطة: {active}\n"
+        f"⏳ قيد الانتظار: {pending}\n"
+        f"🚫 المحظورة: {blocked}\n"
+        f" مجموع الكل: {len(groups)}\n\n"
+        "👇 اختر قسماً لإدارته:"
+    )
+    
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("📝 مراجعة الطلبات المعلقة", callback_data="admin_view_pending"),
+        InlineKeyboardButton("📢 إذاعة (نشر عام)", callback_data="admin_broadcast"),
+        InlineKeyboardButton("❌ إغلاق", callback_data="close_admin")
+    )
+    
+    await message.answer(txt, reply_markup=kb, parse_mode="HTML")
+
+# --- معالج عرض الطلبات المعلقة ---
+@dp.callback_query_handler(lambda c: c.data == "admin_view_pending", user_id=ADMIN_ID)
+async def view_pending_groups(callback_query: types.CallbackQuery):
+    res = supabase.table("allowed_groups").select("*").eq("status", "pending").execute()
+    
+    if not res.data:
+        return await callback_query.answer("لا توجد طلبات معلقة حالياً.", show_alert=True)
+    
+    txt = "⏳ <b>طلبات التفعيل الحالية:</b>\n\n"
+    kb = InlineKeyboardMarkup(row_width=2)
+    
+    for g in res.data:
+        txt += f"• {g['group_name']} (<code>{g['group_id']}</code>)\n"
+        kb.add(
+            InlineKeyboardButton(f"✅ تفعيل {g['group_name'][:10]}", callback_data=f"auth_approve_{g['group_id']}"),
+            InlineKeyboardButton(f"❌ حظر", callback_data=f"auth_block_{g['group_id']}")
+        )
+    
+    kb.add(InlineKeyboardButton("⬅️ العودة", callback_data="admin_back"))
+    await callback_query.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
+
 # ==========================================
 # 5. نهاية الملف: ضمان التشغيل 24/7 على Render
 # ==========================================
