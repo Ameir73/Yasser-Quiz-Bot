@@ -690,7 +690,7 @@ async def render_members_list(message, eligible_ids, selected_list):
     kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz"))
     await message.edit_text("👥 **أقسام الأعضاء المبدعين:**", reply_markup=kb)
     
-    @dp.callback_query_handler(lambda c: c.data.startswith('toggle_mem_'), state="*")
+@dp.callback_query_handler(lambda c: c.data.startswith('toggle_mem_'), state="*")
 async def toggle_member(c: types.CallbackQuery, state: FSMContext):
     m_id = c.data.replace('toggle_mem_', '')
     data = await state.get_data()
