@@ -91,7 +91,7 @@ class Form(StatesGroup):
 async def start_cmd(message: types.Message):
     user_mention = message.from_user.mention
     welcome_txt = (
-        f"مرحبا بك {user_mention} في بوت مسابقات كوين.\n\n"
+        f"مرحبا بك {user_mention} في بوت مسابقات نسخة تجريبيه.\n\n"
         f"تستطيع الآن إضافة أقسامك الخاصة وقم بتهيئة المسابقات منها.\n\n"
         f"🔹 <b>لتفعيل البوت في مجموعتك:</b> أرسل كلمة (تفعيل)\n"
         f"🔹 <b>للإعدادات:</b> أرسل (تحكم)\n"
@@ -144,16 +144,41 @@ async def control_panel(message: types.Message):
     )
     await message.answer(txt, reply_markup=kb, disable_web_page_preview=True)
 
-# --- معالج أزرار التفعيل (ياسر) ---
-@dp.callback_query_handler(lambda c: c.data.startswith('auth_'), user_id=ADMIN_ID)
+# --- معالج أزرار التفعيل (الإصدار الآمن والمضمون) ---
+@dp.callback_query_handler(lambda c: c.data.startswith(('approve_', 'ban_')), user_id=ADMIN_ID)
 async def process_auth_callback(callback_query: types.CallbackQuery):
-    action, _, target_id = callback_query.data.split('_')
-    new_status = "active" if action == "approve" else "blocked"
-    supabase.table("allowed_groups").update({"status": new_status}).eq("group_id", target_id).execute()
-    await callback_query.answer("تم التحديث!")
-    await callback_query.message.edit_text(f"{callback_query.message.text}\n\n✅ <b>تم التفعيل بنجاح</b>" if action == "approve" else f"{callback_query.message.text}\n\n❌ <b>تم الحظر</b>")
+    # تقسيم البيانات: الأكشن والآيدي
+    data_parts = callback_query.data.split('_')
+    action = data_parts[0]  # approve أو ban
+    target_id = data_parts[1] # آيدي القروب
+
     if action == "approve":
-        await bot.send_message(target_id, "🎊 <b>مبارك! تم تفعيل القروب.</b> أرسل (مسابقة) للبدء.", parse_mode="HTML")
+        # تحديث الحالة إلى نشط
+        supabase.table("allowed_groups").update({"status": "active"}).eq("group_id", target_id).execute()
+        
+        await callback_query.answer("تم التفعيل ✅", show_alert=True)
+        await callback_query.message.edit_text(
+            f"{callback_query.message.text}\n\n✅ **تم التفعيل بنجاح بواسطة المطور**", 
+            parse_mode="Markdown"
+        )
+        # إشعار القروب
+        await bot.send_message(target_id, "🎊 **مبارك! تم تفعيل القروب.** أرسل كلمة (مسابقة) للبدء.", parse_mode="Markdown")
+    
+    elif action == "ban":
+        # تحديث الحالة إلى محظور
+        supabase.table("allowed_groups").update({"status": "blocked"}).eq("group_id", target_id).execute()
+        
+        await callback_query.answer("تم الحظر ❌", show_alert=True)
+        await callback_query.message.edit_text(
+            f"{callback_query.message.text}\n\n❌ **تم رفض الطلب وحظر القروب**", 
+            parse_mode="Markdown"
+        )
+        # إشعار القروب (اختياري)
+        await bot.send_message(target_id, "🚫 **نعتذر، تم رفض طلب تفعيل البوت في هذا القروب.**")
+
+# --- 2. إدارة الأقسام والأسئلة ---
+# هنا نبدأ كود إضافة الأسئلة لقسم البوت...
+
 # --- 2. إدارة الأقسام والأسئلة ---
 @dp.callback_query_handler(lambda c: c.data == 'custom_add')
 async def custom_add_menu(c: types.CallbackQuery):
