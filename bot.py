@@ -19,18 +19,28 @@ MY_TELEGRAM_URL = "https://t.me/Ya_79k"
 # الربط بسوبابيس
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# إعداد البوت بنظام HTML لضمان جمال التنسيق ومنع النجوم
+# --- [ الخطوة 1: دالة فحص صلاحية المجموعة - بناء ياسر الاحترافي ] ---
+async def get_group_status(chat_id):
+    try:
+        res = supabase.table("allowed_groups").select("status").eq("group_id", chat_id).execute()
+        if res.data and len(res.data) > 0:
+            return res.data[0]['status']
+        return None 
+    except Exception as e:
+        logging.error(f"خطأ في فحص حالة المجموعة: {e}")
+        return None
+
+# إعداد البوت بنظام HTML
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
 async def send_creative_results(chat_id, correct_ans, winners, overall_scores):
-    """تصميم ياسر المطور: دمج الفائزين والترتيب في رسالة واحدة ومنع تكرار الرسائل"""
+    """تصميم ياسر المطور: دمج الفائزين والترتيب في رسالة واحدة"""
     msg =  "━━━━━━━━━━━━━━━━━━━━━\n"
     msg += f"✅ الإجابة الصحيحة: <b>{correct_ans}</b>\n"
     msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
     
-    # التحقق إذا كان هناك فائزين في هذا السؤال
     if winners:
         msg += "━━━━ أبطال هذا السؤال ✅ ━━━━\n"
         for i, w in enumerate(winners, 1):
@@ -38,7 +48,6 @@ async def send_creative_results(chat_id, correct_ans, winners, overall_scores):
     else:
         msg += "❌ لم ينجح أحد في الإجابة على هذا السؤال\n"
     
-    # عرض الترتيب العام لأعلى 3 متسابقين (النقاط التراكمية)
     leaderboard = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)
     msg += "\n━━━━ 🏆 الترتيب العام للمسابقة ━━━━\n"
     medals = ["🥇", "🥈", "🥉"]
@@ -73,9 +82,6 @@ class Form(StatesGroup):
     waiting_for_ans1 = State()
     waiting_for_ans2 = State()
     waiting_for_new_cat_name = State()
-    
-last_clicks = {} 
-selected_members = {} 
 
 # --- 1. الأوامر الأساسية ---
 @dp.message_handler(commands=['start'])
