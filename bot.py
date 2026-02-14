@@ -524,27 +524,46 @@ async def list_categories_for_questions(c: types.CallbackQuery):
         # 1. جلب معرف المستخدم الحالي (للتأكد من خصوصية الأقسام)
         user_id = str(c.from_user.id)
         
-        # 2. طلب الأقسام التي تخص هذا المستخدم فقط باستخدام .eq()
-        # هذا هو السطر الذي سيمنع عبير من رؤية أقسامك
-        res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
-        categories = res.data
+        # --- 1. واجهة تهيئة المسابقة (تم التأكد من أزرار الرجوع) ---
+@dp.callback_query_handler(lambda c: c.data == 'setup_quiz', state="*")
+async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    await c.answer()
+    
+    # تحديث: حفظ المالك عشان نظام الأمان اللي سويناه قبل قليل
+    await state.update_data(owner_id=c.from_user.id, owner_name=c.from_user.first_name)
+    
+    text = "🎉 أهلاً بك! قم بتهيئة المسابقة عن طريق اختيار أحد الخيارات التالية:"
+    
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("👥 أقسام الأعضاء (اختر من إبداعات الآخرين)", callback_data="members_setup_step1"),
+        InlineKeyboardButton("👤 أقسامك الخاصة (التي أنشأتها أنت)", callback_data="my_setup_step1"),
+        InlineKeyboardButton("🤖 أقسام البوت (الرسمية)", callback_data="bot_setup_step1"),
+        # هذا الزر يرجعك للشاشة الرئيسية للبوت
+        InlineKeyboardButton("🔙 رجوع خطوة للخلف", callback_data="back_to_start") 
+    )
+    await c.message.edit_text(text, reply_markup=kb)
 
-        if not categories:
-            await c.answer("⚠️ ليس لديك أقسام خاصة بك حالياً.", show_alert=True)
-            return
+# --- 2. معالج الرجوع للشاشة الرئيسية (هذا اللي كان ناقصك) ---
+@dp.callback_query_handler(lambda c: c.data == 'back_to_start', state="*")
+async def process_back_to_start(c: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    await c.answer()
+    
+    # النص اللي يظهر أول ما تفتح البوت
+    text = f"✨ **أهلاً بك يا {c.from_user.first_name} في بوت المسابقات**\n\nاختر من القائمة أدناه للبدء:"
+    
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("🎮 بدء مسابقة جديدة", callback_data="setup_quiz"),
+        InlineKeyboardButton("⚙️ إعدادات أقسامك", callback_data="custom_add_menu"), # عدل هذا حسب اسم دالتك
+        InlineKeyboardButton("📊 لوحة التحكم", callback_data="admin_dashboard") if c.from_user.id == ADMIN_ID else InlineKeyboardButton("ℹ️ معلومات", callback_data="info")
+    )
+    
+    await c.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
 
-        kb = InlineKeyboardMarkup(row_width=1)
-        for cat in categories:
-            # صنع زر لكل قسم خاص بالمستخدم فقط
-            kb.add(InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"manage_questions_{cat['id']}"))
-
-        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add_menu"))
-        await c.message.edit_text("📋 اختر أحد أقسامك لإدارة الأسئلة:", reply_markup=kb)
-
-    except Exception as e:
-        logging.error(f"Filter Error: {e}")
-        await c.answer("⚠️ حدث خطأ في تصفية الأقسام.")
-        
+# --- 3. إصلاح زر الرجوع في قائمة اختيار الأعضاء ---
 def generate_members_keyboard(members, selected_list):
     kb = InlineKeyboardMarkup(row_width=2)
     for m in members:
@@ -553,24 +572,18 @@ def generate_members_keyboard(members, selected_list):
         kb.insert(InlineKeyboardButton(f"{mark}{m['name']}", callback_data=f"toggle_mem_{m_id}"))
     
     kb.add(InlineKeyboardButton("➡️ التالي (اختيار الأقسام)", callback_data="go_to_cats_selection"))
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz"))
+    # هنا التأكد إن الرجوع يرجع لـ setup_quiz (واجهة الأقسام الثلاثة)
+    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz")) 
     return kb
 
-# --- 1. واجهة تهيئة المسابقة (متاحة للجميع) ---
-@dp.callback_query_handler(lambda c: c.data == 'setup_quiz', state="*")
-async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
-    await state.finish()
+# --- 4. إصلاح زر الرجوع في إدارة أقسامك الخاصة ---
+# أضف هذا المعالج إذا كنت تبي زر "الرجوع" في قائمة "اختر أحد أقسامك" يشتغل
+@dp.callback_query_handler(lambda c: c.data == "custom_add_menu", state="*")
+async def back_to_custom_menu(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
-    text = "🎉 أهلاً بك! قم بتهيئة المسابقة عن طريق اختيار أحد الخيارات التالية:"
+    # هنا تضع الكود الخاص بالقائمة السابقة لإدارة الأقسام (إضافة/حذف)
+    await c.message.edit_text("📋 قائمة إدارة الأقسام والأسئلة:", reply_markup=your_custom_menu_kb) 
     
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(
-        InlineKeyboardButton("👥 أقسام الأعضاء (اختر من إبداعات الآخرين)", callback_data="members_setup_step1"),
-        InlineKeyboardButton("👤 أقسامك الخاصة (التي أنشأتها أنت)", callback_data="my_setup_step1"),
-        InlineKeyboardButton("🤖 أقسام البوت (الرسمية)", callback_data="bot_setup_step1"),
-        InlineKeyboardButton("🔙 رجوع خطوة للخلف", callback_data="start_quiz")
-    )
-    await c.message.edit_text(text, reply_markup=kb)
 
 # --- جلب أقسام البوت الرسمية (جديد) ---
 @dp.callback_query_handler(lambda c: c.data == 'bot_setup_step1', state="*")
