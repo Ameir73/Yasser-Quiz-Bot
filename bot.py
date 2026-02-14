@@ -536,276 +536,216 @@ def generate_members_keyboard(members, selected_list):
 async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
     await state.finish()
     await c.answer()
-    text = "🎉  أهلاً بك! قم بتهيئة المسابقة عن طريق اختيار أحد الخيارات التالية منهنا يمكنك بدا وتشعيل المسابقات:"
+    text = "🎉 أهلاً بك! قم بتهيئة المسابقة عن طريق اختيار أحد الخيارات التالية:"
     
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
-        InlineKeyboardButton("👥 أقسام الأعضاء (اختر من إبداعات الآخرين)", callback_data="members_setup_step1"),
-        InlineKeyboardButton("👤 أقسامك الخاصة (التي أنشأتها أنت)", callback_data="my_setup_step1"),
-        InlineKeyboardButton("🤖 أقسام البوت (قيد التطوير)", callback_data="bot_dev_msg"),
-        InlineKeyboardButton("🔙 رجوع خطوة للخلف", callback_data="start_quiz") # الرجوع للقائمة الرئيسية
+        InlineKeyboardButton("👥 أقسام الأعضاء (إبداعات الآخرين)", callback_data="members_setup_step1"),
+        InlineKeyboardButton("👤 أقسامك الخاصة (التي أنشأتها)", callback_data="my_setup_step1"),
+        InlineKeyboardButton("🤖 أقسام البوت (الرسمية)", callback_data="bot_setup_step1"),
+        InlineKeyboardButton("🔙 رجوع خطوة للخلف", callback_data="start_quiz")
     )
     await c.message.edit_text(text, reply_markup=kb)
 
-# --- 1.5 - جلب الأقسام الخاصة بالمستخدم (تم إصلاح خطأ slice) ---
+# --- 1.1 - جلب أقسام البوت الرسمية ---
+@dp.callback_query_handler(lambda c: c.data == 'bot_setup_step1', state="*")
+async def start_bot_selection(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    res = supabase.table("bot_questions").select("category").execute()
+    if not res.data:
+        await c.answer("⚠️ لا توجد أقسام رسمية حالياً!", show_alert=True)
+        return
+    unique_cats = sorted(list(set([item['category'] for item in res.data])))
+    eligible_cats = [{"id": cat, "name": cat} for cat in unique_cats]
+    await state.update_data(eligible_cats=eligible_cats, selected_cats=[], is_bot_quiz=True) 
+    await render_categories_list(c.message, eligible_cats, [], is_bot=True)
+
+# --- 1.2 - جلب الأقسام الخاصة بالمستخدم ---
 @dp.callback_query_handler(lambda c: c.data == 'my_setup_step1', state="*")
 async def start_private_selection(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     user_id = str(c.from_user.id)
-    
-    # جلب الأقسام التي أنشأتها أنت فقط
     res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
-    
     if not res.data:
         await c.answer("⚠️ ليس لديك أقسام خاصة بك حالياً!", show_alert=True)
         return
-
-    # حفظ الأقسام لبدء الاختيار (استخدمنا eligible_cats لتطابق دالة الرسم)
-    await state.update_data(eligible_cats=res.data, selected_cats=[]) 
-    
-    # استدعاء دالة رسم الأقسام (الموجودة في السطر 538 في ملفك) ✅
+    await state.update_data(eligible_cats=res.data, selected_cats=[], is_bot_quiz=False) 
     await render_categories_list(c.message, res.data, [])
 
-    # حفظ الأقسام لبدء الاختيار
-    await state.update_data(eligible_list=res.data, selected_members=[user_id]) 
-    
-    # استدعاء دالة الرسم الموجودة في السطر 480 عندك
-    await render_members_list(c.message, res.data, [])
-# --- 2. جلب المبدعين (15+ سؤال) ليختار منهم المستخدم ---
+# --- 2. جلب المبدعين (للأقسام العامة) ---
 @dp.callback_query_handler(lambda c: c.data == "members_setup_step1", state="*")
 async def start_member_selection(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
-    
-    # جلب قائمة من أنشأوا أسئلة من Supabase
     res = supabase.table("questions").select("created_by").execute()
-    
     if not res.data:
-        await c.answer("⚠️ لا يوجد أعضاء لديهم أقسام منشورة حالياً.", show_alert=True)
+        await c.answer("⚠️ لا يوجد أعضاء لديهم أقسام حالياً.", show_alert=True)
         return
-
     from collections import Counter
     counts = Counter([q['created_by'] for q in res.data])
-    
-    # اختيار الأعضاء الذين لديهم 15 سؤال أو أكثر
     eligible_ids = [m_id for m_id, count in counts.items() if count >= 15]
-
     if not eligible_ids:
-        await c.answer("⚠️ لا يوجد أعضاء حالياً وصلوا لـ 15 سؤال.", show_alert=True)
+        await c.answer("⚠️ لا يوجد مبدعون وصلوا لـ 15 سؤال.", show_alert=True)
         return
-
-    await state.update_data(eligible_list=eligible_ids, selected_members=[])
+    await state.update_data(eligible_list=eligible_ids, selected_members=[], is_bot_quiz=False)
     await render_members_list(c.message, eligible_ids, [])
 
-# --- 3. عرض القائمة العامة للاختيار ✅ ---
+# --- 3. دوال الرسم والتبديل (Logic) ---
 async def render_members_list(message, eligible_ids, selected_list):
     kb = InlineKeyboardMarkup(row_width=2)
     for m_id in eligible_ids:
         status = "✅ " if m_id in selected_list else ""
-        # إظهار "المبدع" مع آخر 6 أرقام من هويته
         kb.insert(InlineKeyboardButton(f"{status} المبدع: {str(m_id)[-6:]}", callback_data=f"toggle_mem_{m_id}"))
-        
-    
-    # زر الانتقال للمرحلة التالية (سحب الأقسام)
     if selected_list:
         kb.add(InlineKeyboardButton(f"➡️ تم اختيار ({len(selected_list)}) .. عرض أقسامهم", callback_data="go_to_cats_step"))
-    
     kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz"))
-    
-    await message.edit_text(
-        "👥 **أقسام الأعضاء:**\nاختر المبدعين الذين تود رؤية أقسامهم وضمها لمسابقتك:", 
-        reply_markup=kb
-    )
+    await message.edit_text("👥 **أقسام الأعضاء:**\nاختر المبدعين لضم أقسامهم:", reply_markup=kb)
 
-# --- 4. منطق التبديل (Toggle) متاح للجميع ---
 @dp.callback_query_handler(lambda c: c.data.startswith('toggle_mem_'), state="*")
 async def toggle_member(c: types.CallbackQuery, state: FSMContext):
     m_id = c.data.replace('toggle_mem_', '')
     data = await state.get_data()
     selected = data.get('selected_members', [])
     eligible = data.get('eligible_list', [])
-
-    if m_id in selected:
-        selected.remove(m_id)
-    else:
-        selected.append(m_id)
-    
+    if m_id in selected: selected.remove(m_id)
+    else: selected.append(m_id)
     await state.update_data(selected_members=selected)
     await c.answer()
     await render_members_list(c.message, eligible, selected)
 
-# --- 5. عرض الأقسام الخاصة بالمبدعين المختارين (المرحلة التالية) ---
 @dp.callback_query_handler(lambda c: c.data == "go_to_cats_step", state="*")
 async def show_selected_members_cats(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     data = await state.get_data()
     chosen_ids = data.get('selected_members', [])
-    
-    if not chosen_ids:
-        await c.answer("⚠️ يرجى اختيار مبدع واحد على الأقل!", show_alert=True)
-        return
-
-    # جلب الأقسام التابعة لهؤلاء المبدعين من Supabase
     res = supabase.table("categories").select("id, name").in_("created_by", chosen_ids).execute()
-    
-    if not res.data:
-        await c.answer("⚠️ هؤلاء المبدعين ليس لديهم أقسام حالياً.", show_alert=True)
-        return
-
-    # تخزين الأقسام المتاحة والبدء بقائمة فارغة من المختار ✅
     await state.update_data(eligible_cats=res.data, selected_cats=[])
     await render_categories_list(c.message, res.data, [])
 
-# --- 6. دالة رسم قائمة الأقسام مع علامة الصح ✅ ---
-async def render_categories_list(message, eligible_cats, selected_cats):
+async def render_categories_list(message, eligible_cats, selected_cats, is_bot=False):
     kb = InlineKeyboardMarkup(row_width=2)
     for cat in eligible_cats:
-        # إذا كان القسم في قائمة المختارين يظهر بجانبه علامة صح ✅
         status = "✅ " if str(cat['id']) in selected_cats else ""
         kb.insert(InlineKeyboardButton(f"{status}{cat['name']}", callback_data=f"toggle_cat_{cat['id']}"))
-    
-    # يظهر زر "تم" للانتقال للإعدادات فقط إذا تم اختيار قسم واحد على الأقل
     if selected_cats:
-        kb.add(InlineKeyboardButton(f"➡️ تم اختيار ({len(selected_cats)}) .. إعدادات المسابقة", callback_data="final_quiz_settings"))
-    
-    kb.add(InlineKeyboardButton("🔙 رجوع لاختيار المبدعين", callback_data="members_setup_step1"))
-    
-    await message.edit_text(
-        "📂 **أقسام المبدعين المختارين:**\n"
-        "اختر الأقسام التي تود حفظها وتشغيلها في مسابقتك:", 
-        reply_markup=kb
-    )
+        kb.add(InlineKeyboardButton(f"➡️ تم اختيار ({len(selected_cats)}) .. الإعدادات", callback_data="final_quiz_settings"))
+    back_data = "setup_quiz" if is_bot else "members_setup_step1"
+    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data=back_data))
+    await message.edit_text("📂 **اختر الأقسام التي تود ضمها لمسابقتك:**", reply_markup=kb)
 
-# --- 7. تبديل اختيار القسم (Toggle) للأقسام ---
 @dp.callback_query_handler(lambda c: c.data.startswith('toggle_cat_'), state="*")
 async def toggle_category_selection(c: types.CallbackQuery, state: FSMContext):
     cat_id = c.data.replace('toggle_cat_', '')
     data = await state.get_data()
     selected = data.get('selected_cats', [])
     eligible = data.get('eligible_cats', [])
-
-    if cat_id in selected:
-        selected.remove(cat_id)
-    else:
-        selected.append(cat_id)
-    
+    is_bot = data.get('is_bot_quiz', False)
+    if cat_id in selected: selected.remove(cat_id)
+    else: selected.append(cat_id)
     await state.update_data(selected_cats=selected)
     await c.answer()
-    await render_categories_list(c.message, eligible, selected)
+    await render_categories_list(c.message, eligible, selected, is_bot=is_bot)
 
-# --- السطر 559: بداية لوحة إعدادات المسابقة الاحترافية ---
+# --- 4. لوحة إعدادات المسابقة الاحترافية ---
 @dp.callback_query_handler(lambda c: c.data == "final_quiz_settings", state="*")
 async def final_quiz_settings_panel(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     data = await state.get_data()
-    
-    # جلب القيم أو وضع قيم افتراضية
     q_time = data.get('quiz_time', 15)
     q_count = data.get('quiz_count', 10)
     q_mode = data.get('quiz_mode', 'السرعة ⚡')
-    # تحديد نوع القسم بناءً على الاختيار السابق
-    q_type = "خاص 👤" if data.get('selected_members') == [str(c.from_user.id)] else "عام 👥"
+    q_hint = data.get('quiz_hint', 'معطل ❌') 
+    
+    if data.get('is_bot_quiz'): q_type = "رسمي 🤖"
+    elif data.get('selected_members') == [str(c.from_user.id)]: q_type = "خاص 👤"
+    else: q_type = "عام 👥"
 
-    # شاشة الرسالة المزخرفة فوق الأزرار
     text = (
-        "أهلاً بك في \n"
         "┏━━━━━لوحة اعدادات المسابقه━━━━━┓\n"
-        f"📌 عدد الاسئلة: {q_count} 📍\n"
-        f"📁 نوع القسم: {q_type}\n"
+        f"📌 عدد الاسئلة: {q_count}\n"
+        f"📁 نوع المسابقة: {q_type}\n"
         f"🔖 نظام الإجابة: {q_mode}\n"
         f"⏳ المهلة: {q_time} ثانية\n"
+        f"💡 تلميح الإجابة: {q_hint}\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"
     )
 
     kb = InlineKeyboardMarkup(row_width=3)
-    
-    # أزرار اختيار العدد (تفاعلية)
-    kb.row(InlineKeyboardButton(f"📊 اختر عدد الأسئلة:", callback_data="ignore"))
+    kb.row(InlineKeyboardButton("📊 اختر عدد الأسئلة:", callback_data="ignore"))
     kb.row(
-        InlineKeyboardButton(f"{'✅ ' if q_count==10 else ''}10", callback_data="set_count_10"),
-        InlineKeyboardButton(f"{'✅ ' if q_count==20 else ''}20", callback_data="set_count_20"),
-        InlineKeyboardButton(f"{'✅ ' if q_count==30 else ''}30", callback_data="set_count_30")
+        InlineKeyboardButton(f"{'✅' if q_count==10 else ''} 10", callback_data="set_count_10"),
+        InlineKeyboardButton(f"{'✅' if q_count==20 else ''} 20", callback_data="set_count_20"),
+        InlineKeyboardButton(f"{'✅' if q_count==30 else ''} 30", callback_data="set_count_30")
     )
-
-    # زر الثواني (يتغير في نفس الزر عند الضغط)
     kb.row(InlineKeyboardButton(f"⏱️ المهلة: {q_time} ثانية", callback_data="cycle_time"))
-
-    # نظام الإجابة والأقسام
     kb.row(
         InlineKeyboardButton(f"🔖 النظام: {q_mode}", callback_data="cycle_mode"),
-        InlineKeyboardButton("⚙️ الأقسام الرسمية (قيد التطوير)", callback_data="bot_dev_msg")
+        InlineKeyboardButton(f"💡 تلميح: {q_hint}", callback_data="cycle_hint")
     )
-
-    # أزرار الحفظ والإغلاق
     kb.row(InlineKeyboardButton("💾 حفظ المسابقة الآن", callback_data="save_quiz_process"))
     kb.row(InlineKeyboardButton("❌ إغلاق النافذة", callback_data="close_window"))
+    await c.message.edit_text(text, reply_markup=kb)
 
-    try:
-        await c.message.edit_text(text, reply_markup=kb)
-    except:
-        pass
-
-# --- محركات التغيير التفاعلية (توضع تحتها مباشرة) ---
+# --- 5. محركات الإعدادات ---
+@dp.callback_query_handler(lambda c: c.data == "cycle_hint", state="*")
+async def cycle_hint(c: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    next_hint = 'مفعل ✅' if data.get('quiz_hint', 'معطل ❌') == 'معطل ❌' else 'معطل ❌'
+    await state.update_data(quiz_hint=next_hint)
+    await final_quiz_settings_panel(c, state)
 
 @dp.callback_query_handler(lambda c: c.data == "cycle_time", state="*")
 async def cycle_time(c: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    current = data.get('quiz_time', 15)
-    # 15 -> 20 -> 30 -> 45 -> 15
-    next_time = 20 if current == 15 else (30 if current == 20 else (45 if current == 30 else 15))
-    await state.update_data(quiz_time=next_time)
+    curr = data.get('quiz_time', 15)
+    next_t = 20 if curr == 15 else (30 if curr == 20 else (45 if curr == 30 else 15))
+    await state.update_data(quiz_time=next_t)
     await final_quiz_settings_panel(c, state)
 
 @dp.callback_query_handler(lambda c: c.data.startswith('set_count_'), state="*")
 async def set_count_direct(c: types.CallbackQuery, state: FSMContext):
-    new_count = int(c.data.split('_')[-1])
-    await state.update_data(quiz_count=new_count)
+    await state.update_data(quiz_count=int(c.data.split('_')[-1]))
     await final_quiz_settings_panel(c, state)
 
 @dp.callback_query_handler(lambda c: c.data == "cycle_mode", state="*")
 async def cycle_mode(c: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    current = data.get('quiz_mode', 'السرعة ⚡')
-    next_mode = 'الوقت الكامل ⏳' if current == 'السرعة ⚡' else 'السرعة ⚡'
-    await state.update_data(quiz_mode=next_mode)
+    next_m = 'كامل ⏳' if data.get('quiz_mode', 'السرعة ⚡') == 'السرعة ⚡' else 'السرعة ⚡'
+    await state.update_data(quiz_mode=next_m)
     await final_quiz_settings_panel(c, state)
-    # --- عملية الحفظ ---
+
+# --- 6. عملية الحفظ النهائية ---
 @dp.callback_query_handler(lambda c: c.data == "save_quiz_process", state="*")
 async def start_save(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
-    await c.message.edit_text("📝 **يا بطل، أرسل الآن اسم المسابقة التي تريد حفظها:**\n(مثلاً: تحدي الأذكياء)")
-    # نستخدم حالة مخصصة لاستقبال الاسم
+    await c.message.edit_text("📝 **يا بطل، أرسل الآن اسم المسابقة لحفظها:**")
     await state.set_state("wait_for_name")
 
-# --- عملية الحفظ المفلترة ---
 @dp.message_handler(state="wait_for_name")
 async def process_quiz_name(message: types.Message, state: FSMContext):
     quiz_name = message.text
-    user_id = str(message.from_user.id)
     data = await state.get_data()
-    
-    # جلب الأقسام المختارة فعلياً (التي بجانبها علامة الصح ✅)
-    selected_ids = [int(i) for i in data.get('selected_cats', [])]
-
-    if not selected_ids:
-        await message.answer("⚠️ خطأ: لم تختار أي قسم! ارجع واختار قسم واحد على الأقل قبل الحفظ.")
+    selected = data.get('selected_cats', [])
+    if not selected:
+        await message.answer("⚠️ خطأ: لم تختار أي قسم!")
         return
 
     payload = {
-        "created_by": user_id,
+        "created_by": str(message.from_user.id),
         "quiz_name": quiz_name,
         "time_limit": data.get('quiz_time', 15),
         "questions_count": data.get('quiz_count', 10),
         "mode": data.get('quiz_mode', 'السرعة ⚡'),
-        "cats": selected_ids  # تخزين دقيق للأقسام
+        "hint_enabled": True if data.get('quiz_hint') == 'مفعل ✅' else False,
+        "is_bot_quiz": data.get('is_bot_quiz', False),
+        "cats": selected 
     }
     
     try:
         supabase.table("saved_quizzes").insert(payload).execute()
-        await message.answer(f"✅ **تم حفظ المسابقة ({quiz_name}) بنجاح!**\n\n🚀 لتشغيلها، أرسل كلمة: **مسابقة**")
+        await message.answer(f"✅ تم حفظ المسابقة ({quiz_name}) بنجاح!\n🚀 لتشغيلها أرسل كلمة: **مسابقة**")
         await state.finish()
     except Exception as e:
-        logging.error(f"Save error: {e}")
-        await message.answer(f"❌ حدث خطأ أثناء الحفظ.")
+        await message.answer(f"❌ خطأ بالحفظ. تأكد من تحديث أعمدة القاعدة.")
 
 # --- [1] عرض القائمة الرئيسية (نظام ياسر المتطور: خاص vs عام) ---
 @dp.message_handler(lambda message: message.text == "مسابقة")
