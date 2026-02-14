@@ -531,21 +531,18 @@ def generate_members_keyboard(members, selected_list):
     kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz"))
     return kb
 
-# --- 1. واجهة تهيئة المسابقة (متاحة للجميع) ---
+# --- 1. واجهة تهيئة المسابقة (تأكد من مطابقة هذه الأسماء) ---
 @dp.callback_query_handler(lambda c: c.data == 'setup_quiz', state="*")
 async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
     await state.finish()
-    await c.answer()
-    text = "🎉 أهلاً بك! قم بتهيئة المسابقة عن طريق اختيار أحد الخيارات التالية:"
-    
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
         InlineKeyboardButton("👥 أقسام الأعضاء (إبداعات الآخرين)", callback_data="members_setup_step1"),
         InlineKeyboardButton("👤 أقسامك الخاصة (التي أنشأتها)", callback_data="my_setup_step1"),
-        InlineKeyboardButton("🤖 أقسام البوت (الرسمية)", callback_data="bot_setup_step1"),
+        InlineKeyboardButton("🤖 أقسام البوت (الرسمية)", callback_data="bot_setup_step1"), # هذا أهم زر للجدول الجديد
         InlineKeyboardButton("🔙 رجوع خطوة للخلف", callback_data="start_quiz")
     )
-    await c.message.edit_text(text, reply_markup=kb)
+    await c.message.edit_text("🎉 أهلاً بك! قم بتهيئة المسابقة:", reply_markup=kb)
 
 # --- جلب الأقسام (نفس الدوال السابقة مع التأكد من تهيئة الخصوصية) ---
 @dp.callback_query_handler(lambda c: c.data == 'bot_setup_step1', state="*")
