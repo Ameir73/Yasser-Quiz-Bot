@@ -178,53 +178,51 @@ async def process_auth_callback(callback_query: types.CallbackQuery):
 
 # --- 2. إدارة الأقسام والأسئلة ---
 # هنا نبدأ كود إضافة الأسئلة لقسم البوت...
-
-# --- 2. إدارة الأقسام والأسئلة ---
+# --- 2. إدارة الأقسام والأسئلة (مصلح لعيون ياسر) ---
 @dp.callback_query_handler(lambda c: c.data == 'custom_add')
 async def custom_add_menu(c: types.CallbackQuery):
+    await c.answer() # لإلغاء تعليق الزر فوراً
     kb = InlineKeyboardMarkup(row_width=1).add(
         InlineKeyboardButton("➕ إضافة قسم جديد", callback_data="add_new_cat"),
         InlineKeyboardButton("📋 قائمة الأقسام", callback_data="list_cats"),
-        InlineKeyboardButton("🔙 الرجوع صفحه التحكم", callback_data="back_to_control")
+        InlineKeyboardButton("🔙 الرجوع لصفحة التحكم", callback_data="start_quiz")
     )
-    await c.message.edit_text("أهلاً بك في لوحة اعدادات أقسامك الخاصة:", reply_markup=kb)
+    await c.message.edit_text("أهلاً بك في لوحة إعدادات أقسامك الخاصة:", reply_markup=kb)
+
 @dp.callback_query_handler(lambda c: c.data == 'add_new_cat')
 async def btn_add_cat(c: types.CallbackQuery):
-    await c.answer() # هذا السطر يخبر تليجرام أن الأمر وصل فيلغي التعليق فوراً
+    await c.answer()
     await Form.waiting_for_cat_name.set()
     await c.message.answer("📝 اكتب اسم القسم الجديد (دين، عامة...):")
+
 @dp.message_handler(state=Form.waiting_for_cat_name)
 async def save_cat(message: types.Message, state: FSMContext):
     try:
-        # 1. إرسال البيانات بشكل صحيح لتجنب خطأ 23502
+        # حفظ القسم في سوبابيس
         supabase.table("categories").insert({
             "name": message.text, 
             "created_by": str(message.from_user.id)
         }).execute()
         
         await state.finish()
-        await message.answer(f"✅ تم حفظ القسم '{message.text}' بنجاح.")
-
-        # 1. جلب معرف المستخدم لفلترة الأقسام فوراً
-        user_id = str(message.from_user.id)
         
-        # 2. التعديل الجوهري: إضافة شرط .eq لكي تظهر أقسام المنشئ فقط
+        user_id = str(message.from_user.id)
         res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
         categories = res.data
 
         kb = InlineKeyboardMarkup(row_width=1)
         if categories:
             for cat in categories:
-                # هنا سيتم عرض أقسام عبير فقط ولن تظهر أقسامك
                 kb.add(InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"manage_questions_{cat['id']}"))
 
-        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add_menu"))
-        await message.answer("📋 اختر أحد أقسامك لإدارة الأسئلة:", reply_markup=kb)
+        # التعديل هنا: غيرنا custom_add_menu إلى custom_add ليتطابق مع الدالة في الأعلى
+        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add"))
+        await message.answer(f"✅ تم حفظ القسم '{message.text}' بنجاح.\n📋 اختر أحد أقسامك لإدارة الأسئلة:", reply_markup=kb)
 
     except Exception as e:
         logging.error(f"Error: {e}")
         await message.answer("⚠️ حدث خطأ أثناء الحفظ، جرب مرة أخرى.")
-        
+
 # 1. نافذة إعدادات القسم عند الضغط على اسمه
 @dp.callback_query_handler(lambda c: c.data.startswith('manage_questions_'))
 async def manage_questions_window(c: types.CallbackQuery):
