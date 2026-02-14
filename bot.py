@@ -16,6 +16,8 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 OWNER_USERNAME = "@Ya_79k"
 MY_TELEGRAM_URL = "https://t.me/Ya_79k"
 
+# معرف المطور (ياسر) للتحكم بالإدارة والتفعيل
+ADMIN_ID = 7988144062
 # الربط بسوبابيس
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
