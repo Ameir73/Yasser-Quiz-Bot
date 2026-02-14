@@ -518,13 +518,9 @@ async def execute_delete_cat(c: types.CallbackQuery):
     # الرجوع لقائمة الأقسام الرئيسية
     await custom_add_menu(c)
     
-        # 1. جلب معرف المستخدم الحالي (للتأكد من خصوصية الأقسام)
-        user_id = str(c.from_user.id)
-        # --- دالة عرض قائمة الأقسام الخاصة للمستخدم لإدارتها ---
-@dp.callback_query_handler(lambda c: c.data == 'list_cats', state="*")
-async def list_user_categories_for_manage(c: types.CallbackQuery):
+@dp.callback_query_handler(lambda c: c.data == 'list_cats')
+async def list_categories_for_questions(c: types.CallbackQuery):
     try:
-        await c.answer()
         # 1. جلب معرف المستخدم الحالي (للتأكد من خصوصية الأقسام)
         user_id = str(c.from_user.id)
         
