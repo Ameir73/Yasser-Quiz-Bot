@@ -83,19 +83,54 @@ class Form(StatesGroup):
     waiting_for_ans2 = State()
     waiting_for_new_cat_name = State()
 
-# --- 1. الأوامر الأساسية ---
+# --- 1. الأوامر الأساسية ونظام التفعيل الاحترافي ---
+
 @dp.message_handler(commands=['start'])
 async def start_cmd(message: types.Message):
     user_mention = message.from_user.mention
     welcome_txt = (
         f"مرحبا بك {user_mention} في بوت مسابقات كوين.\n\n"
-        f"تستطيع الآن إضافة أقسامك الخاصة وقم بتهيئة المسابقات منها أو من أقسام المشتركين الآخرين.\n\n"
-        f"أرسل (تحكم) للإعدادات | أرسل (مسابقة) للتشغيل"
+        f"تستطيع الآن إضافة أقسامك الخاصة وقم بتهيئة المسابقات منها.\n\n"
+        f"🔹 <b>لتفعيل البوت في مجموعتك:</b> أرسل كلمة (تفعيل)\n"
+        f"🔹 <b>للإعدادات:</b> أرسل (تحكم)\n"
+        f"🔹 <b>للبدء:</b> أرسل (مسابقة)"
     )
     await message.answer(welcome_txt)
 
+# --- [ أمر تفعيل المشرفين - بناء ياسر ] ---
+@dp.message_handler(lambda m: m.text == "تفعيل")
+async def cmd_request_activation(message: types.Message):
+    if message.chat.type == 'private':
+        return await message.answer("⚠️ هذا الأمر للاستخدام داخل المجموعات فقط.")
+
+    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+    if not (member.is_chat_admin() or member.is_chat_creator()):
+        return await message.reply("⚠️ عذراً، هذا الأمر خاص بمشرفي المجموعة فقط.")
+
+    status = await get_group_status(message.chat.id)
+    if status == "active": return await message.reply("✅ البート مفعل بالفعل هنا!")
+    if status == "pending": return await message.reply("⏳ طلب التفعيل قيد المراجعة حالياً.")
+    if status == "blocked": return await message.reply("🚫 هذه المجموعة محظورة.")
+
+    # تسجيل الطلب في سوبابيس
+    supabase.table("allowed_groups").upsert({"group_id": message.chat.id, "group_name": message.chat.title, "status": "pending"}).execute()
+    await message.reply("📥 <b>تم إرسال طلب التفعيل للمطور بنجاح.</b>", parse_mode="HTML")
+    
+    # تنبيه المطور (ياسر) بالأزرار
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup().add(
+        InlineKeyboardButton("✅ موافقة", callback_data=f"auth_approve_{message.chat.id}"),
+        InlineKeyboardButton("❌ حظر", callback_data=f"auth_block_{message.chat.id}")
+    )
+    await bot.send_message(ADMIN_ID, f"🔔 <b>طلب تفعيل جديد!</b>\nالقروب: {message.chat.title}\nID: <code>{message.chat.id}</code>", reply_markup=kb, parse_mode="HTML")
+
 @dp.message_handler(lambda m: m.text == "تحكم")
 async def control_panel(message: types.Message):
+    # قفل الأمان: التحقق من تفعيل القروب قبل فتح اللوحة
+    status = await get_group_status(message.chat.id)
+    if status != "active" and message.chat.id != ADMIN_ID:
+        return await message.reply("⚠️ <b>عذراً، يجب تفعيل المجموعة أولاً.</b>\nأرسل كلمة (تفعيل) لطلب الموافقة من المطور.", parse_mode="HTML")
+
     txt = (f"👋 أهلاً بك في أعدادات المسابقات المطور  \n"
            f"👑 المطور: <b>{OWNER_USERNAME}</b>")
     kb = InlineKeyboardMarkup(row_width=2).add(
@@ -107,6 +142,16 @@ async def control_panel(message: types.Message):
     )
     await message.answer(txt, reply_markup=kb, disable_web_page_preview=True)
 
+# --- معالج أزرار التفعيل (ياسر) ---
+@dp.callback_query_handler(lambda c: c.data.startswith('auth_'), user_id=ADMIN_ID)
+async def process_auth_callback(callback_query: types.CallbackQuery):
+    action, _, target_id = callback_query.data.split('_')
+    new_status = "active" if action == "approve" else "blocked"
+    supabase.table("allowed_groups").update({"status": new_status}).eq("group_id", target_id).execute()
+    await callback_query.answer("تم التحديث!")
+    await callback_query.message.edit_text(f"{callback_query.message.text}\n\n✅ <b>تم التفعيل بنجاح</b>" if action == "approve" else f"{callback_query.message.text}\n\n❌ <b>تم الحظر</b>")
+    if action == "approve":
+        await bot.send_message(target_id, "🎊 <b>مبارك! تم تفعيل القروب.</b> أرسل (مسابقة) للبدء.", parse_mode="HTML")
 # --- 2. إدارة الأقسام والأسئلة ---
 @dp.callback_query_handler(lambda c: c.data == 'custom_add')
 async def custom_add_menu(c: types.CallbackQuery):
