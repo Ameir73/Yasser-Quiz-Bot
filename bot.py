@@ -602,40 +602,32 @@ async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
     )
     await c.message.edit_text(text, reply_markup=kb)
 
-# --- جلب أقسام البوت الرسمية ---
+# --- جلب أقسام البوت الرسمية (ضبط التهيئة) ---
 @dp.callback_query_handler(lambda c: c.data == 'bot_setup_step1', state="*")
-async def bot_questions_setup(c: types.CallbackQuery, state: FSMContext):
+async def start_bot_selection(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     
-    try:
-        # جلب الأقسام الفريدة من جدول الأسئلة الرسمية bot_questions
-        res = supabase.table("bot_questions").select("category").execute()
-        
-        if not res.data:
-            await c.answer("⚠️ لا توجد أقسام رسمية حالياً في جدول bot_questions.", show_alert=True)
-            return
+    # 1. جلب الأقسام الفريدة من جدول bot_questions
+    res = supabase.table("bot_questions").select("category").execute()
+    
+    if not res.data:
+        await c.answer("⚠️ لا توجد أقسام رسمية حالياً!", show_alert=True)
+        return
 
-        # استخراج الأسماء الفريدة وترتيبها
-        unique_cats = sorted(list(set([item['category'] for item in res.data])))
-        
-        # تحويلها لتنسيق يفهمه البوت (id و name)
-        eligible_cats = [{"id": cat, "name": cat} for cat in unique_cats]
-        
-        # حفظ البيانات في الذاكرة (owner_id للأمان و is_bot_quiz للرسالة التعليمية)
-        await state.update_data(
-            eligible_cats=eligible_cats, 
-            selected_cats=[], 
-            is_bot_quiz=True,
-            owner_id=c.from_user.id
-        )
-        
-        # استدعاء الدالة لعرض الأقسام بالرسالة التعليمية (🤖)
-        await render_categories_list(c, eligible_cats, [], is_bot=True)
-
-    except Exception as e:
-        logging.error(f"Bot Setup Error: {e}")
-        await c.answer("⚠️ حدث خطأ فني أثناء جلب البيانات.")
-
+    # 2. استخراج الأسماء وترتيبها
+    unique_cats = sorted(list(set([item['category'] for item in res.data])))
+    eligible_cats = [{"id": cat, "name": cat} for cat in unique_cats]
+    
+    # 3. تحديث الذاكرة (ضبط وضع البوت وأمان الجلسة)
+    await state.update_data(
+        eligible_cats=eligible_cats, 
+        selected_cats=[], 
+        is_bot_quiz=True,  # لتمييزها عن الأقسام الخاصة
+        owner_id=c.from_user.id
+    ) 
+    
+    # 4. الانتقال فوراً لعرض الأقسام ✅
+    await render_categories_list(c.message, eligible_cats, [])
 # --- 1.5 - جلب الأقسام الخاصة بالمستخدم ---
 @dp.callback_query_handler(lambda c: c.data == 'my_setup_step1', state="*")
 async def start_private_selection(c: types.CallbackQuery, state: FSMContext):
@@ -649,6 +641,7 @@ async def start_private_selection(c: types.CallbackQuery, state: FSMContext):
     await render_categories_list(c.message, res.data, [])
 
 # --- 2. جلب المبدعين ---
+
 @dp.callback_query_handler(lambda c: c.data == "members_setup_step1", state="*")
 async def start_member_selection(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
