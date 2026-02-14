@@ -523,7 +523,48 @@ async def list_categories_for_questions(c: types.CallbackQuery):
     try:
         # 1. جلب معرف المستخدم الحالي (للتأكد من خصوصية الأقسام)
         user_id = str(c.from_user.id)
+        # --- دالة عرض قائمة الأقسام الخاصة للمستخدم لإدارتها ---
+@dp.callback_query_handler(lambda c: c.data == 'list_cats', state="*")
+async def list_user_categories_for_manage(c: types.CallbackQuery):
+    try:
+        await c.answer()
+        # 1. جلب معرف المستخدم الحالي (للتأكد من خصوصية الأقسام)
+        user_id = str(c.from_user.id)
         
+        # 2. طلب الأقسام التي تخص هذا المستخدم فقط باستخدام .eq()
+        # هذا هو السطر الذي سيمنع عبير من رؤية أقسامك
+        res = supabase.table("categories").select("*").eq("created_by", user_id).execute()
+        categories = res.data
+
+        if not categories:
+            await c.answer("⚠️ ليس لديك أقسام خاصة بك حالياً.", show_alert=True)
+            return
+
+        kb = InlineKeyboardMarkup(row_width=1)
+        for cat in categories:
+            # صنع زر لكل قسم خاص بالمستخدم فقط
+            kb.add(InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"manage_questions_{cat['id']}"))
+
+        # تصحيح: الرجوع للوحة التحكم الخاصة بك
+        kb.add(InlineKeyboardButton("⬅️ الرجوع", callback_data="custom_add"))
+        await c.message.edit_text("📋 اختر أحد أقسامك لإدارة الأسئلة:", reply_markup=kb)
+
+    except Exception as e:
+        logging.error(f"Filter Error: {e}")
+        await c.answer("⚠️ حدث خطأ في تصفية الأقسام.")
+
+# --- دالة توليد لوحة اختيار الأعضاء ---
+def generate_members_keyboard(members, selected_list):
+    kb = InlineKeyboardMarkup(row_width=2)
+    for m in members:
+        m_id = str(m['user_id'])
+        mark = "✅ " if m_id in selected_list else ""
+        kb.insert(InlineKeyboardButton(f"{mark}{m['name']}", callback_data=f"toggle_mem_{m_id}"))
+    
+    kb.add(InlineKeyboardButton("➡️ التالي (اختيار الأقسام)", callback_data="go_to_cats_selection"))
+    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="setup_quiz"))
+    return kb
+    
     # --- 1. واجهة تهيئة المسابقة (متاحة للجميع) ---
 @dp.callback_query_handler(lambda c: c.data == 'setup_quiz', state="*")
 async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
