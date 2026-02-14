@@ -886,22 +886,23 @@ async def show_quizzes(obj):
     if isinstance(obj, types.Message): await obj.reply(title, reply_markup=kb)
     else: await obj.message.edit_text(title, reply_markup=kb)
 
+# # ==========================================
+# [2] المحرك الأمني ولوحة التحكم الشاملة (النسخة التفاعلية المطورة)
 # ==========================================
-# [2] المحرك الأمني ولوحة التحكم الشاملة (نسخة التلميح الذكي)
-# ==========================================
-@dp.callback_query_handler(lambda c: c.data.startswith(('run_', 'close_', 'confirm_del_', 'final_del_', 'edit_time_', 'set_t_', 'manage_quiz_', 'quiz_settings_', 'back_to_list', 'bot_dev_msg', 'edit_count_', 'set_c_', 'toggle_speed_', 'toggle_scope_', 'toggle_hint_')))
-async def handle_secure_actions(c: types.CallbackQuery):
+@dp.callback_query_handler(lambda c: c.data.startswith(('run_', 'confirm_del_', 'final_del_', 'manage_quiz_', 'quiz_settings_', 'back_to_list', 'toggle_speed_', 'toggle_scope_', 'toggle_hint_', 'cycle_t_', 'set_c_')), state="*")
+async def handle_secure_actions(c: types.CallbackQuery, state: FSMContext):
     try:
         data_parts = c.data.split('_')
+        # تحديد موقع الـ owner_id بناءً على نوع الكولباك
         owner_id = data_parts[-1]
         user_id = str(c.from_user.id)
 
         # 🛑 الدرع الأمني: منع أي شخص من لمس أزرار غيره
         if user_id != owner_id:
-            await c.answer("🚫 عذراً! هذه النافذة ليست لك. استدعِ مسابقتك الخاصة.", show_alert=True)
+            await c.answer("🚫 عذراً! هذه النافذة ليست لك.", show_alert=True)
             return
 
-        # --- شاشة إدارة المسابقة المختارة ---
+        # --- 1. شاشة الإدارة الرئيسية ---
         if c.data.startswith('manage_quiz_'):
             quiz_id = data_parts[2]
             res = supabase.table("saved_quizzes").select("quiz_name").eq("id", quiz_id).single().execute()
@@ -910,158 +911,131 @@ async def handle_secure_actions(c: types.CallbackQuery):
                 InlineKeyboardButton("⚙️ إعدادات المسابقة", callback_data=f"quiz_settings_{quiz_id}_{user_id}"),
                 InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"back_to_list_{user_id}")
             )
-            await c.message.edit_text(f"💎 **إدارة مسابقة: {res.data['quiz_name']}**\nيمكنك البدء الآن أو التحكم في الإعدادات أدناه:", reply_markup=kb)
+            await c.message.edit_text(f"💎 **إدارة مسابقة: {res.data['quiz_name']}**", reply_markup=kb)
             return
 
-        # --- لوحة الإعدادات (نظام تغيير أسماء الأزرار تلقائياً) ---
+        # --- 2. لوحة الإعدادات التفاعلية (الشاشة المتغيرة) ---
         if c.data.startswith('quiz_settings_'):
             quiz_id = data_parts[2]
             res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
             q = res.data
             
-            # تحديد المسميات بناءً على الحالة في قاعدة البيانات
-            current_mode = q.get('mode', 'السرعة ⚡')
-            speed_label = "⚡ نظام السرعة" if current_mode == "السرعة ⚡" else "⏳ نظام الوقت"
+            # مسميات الأنظمة
+            speed_label = f"🔖 {q.get('mode', 'السرعة ⚡')}"
+            scope_label = f"🌐 {'عامة' if q.get('quiz_scope') == 'عام' else 'خاصة 🔐'}"
+            hint_label = f"💡 التلميح: {'مفعل ✅' if q.get('smart_hint') else 'معطل ❌'}"
             
-            current_scope = q.get('quiz_scope', 'خاص')
-            scope_label = "🔒 مسابقة قروب" if current_scope == "خاص" else "🌐 مسابقة عامة"
-
-            # زر التلميح الذكي الجديد
-            is_hint_on = q.get('smart_hint', False)
-            hint_label = "💡 تلميح ذكي: مفعل" if is_hint_on else "💡 تلميح ذكي: معطل"
-            
-            kb = InlineKeyboardMarkup(row_width=2)
-            kb.add(
-                InlineKeyboardButton(f"⏱️ الوقت: {q['time_limit']}ث", callback_data=f"edit_time_{quiz_id}_{user_id}"),
-                InlineKeyboardButton(f"📊 الأسئلة: {q['questions_count']}", callback_data=f"edit_count_{quiz_id}_{user_id}")
+            text = (
+                f"⚙️ **إعدادات المسابقة: {q['quiz_name']}**\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                f"📊 عدد الأسئلة: « {q['questions_count']} »\n"
+                f"⏳ وقت السؤال: « {q['time_limit']} ثانية »\n"
+                "━━━━━━━━━━━━━━━━━━━━"
             )
-            kb.add(
-                InlineKeyboardButton(speed_label, callback_data=f"toggle_speed_{quiz_id}_{user_id}"),
+
+            kb = InlineKeyboardMarkup(row_width=4)
+            
+            # أزرار عدد الأسئلة (تتغير فوراً عند الضغط)
+            counts = [10, 20, 25, 30, 35, 40, 45]
+            btns = []
+            for n in counts:
+                mark = "✅" if q['questions_count'] == n else ""
+                btns.append(InlineKeyboardButton(f"{mark}{n}", callback_data=f"set_c_{quiz_id}_{n}_{user_id}"))
+            kb.add(*btns)
+
+            # أزرار الأنظمة المتغيرة (الوقت والنظام)
+            kb.row(
+                InlineKeyboardButton(f"⏱️ {q['time_limit']} ثانية", callback_data=f"cycle_t_{quiz_id}_{user_id}"),
+                InlineKeyboardButton(speed_label, callback_data=f"toggle_speed_{quiz_id}_{user_id}")
+            )
+            
+            # التلميحات والنطاق
+            kb.row(
+                InlineKeyboardButton(hint_label, callback_data=f"toggle_hint_{quiz_id}_{user_id}"),
                 InlineKeyboardButton(scope_label, callback_data=f"toggle_scope_{quiz_id}_{user_id}")
             )
-            # إضافة زر التلميح في صف منفصل
-            kb.add(InlineKeyboardButton(hint_label, callback_data=f"toggle_hint_{quiz_id}_{user_id}"))
             
-            kb.add(InlineKeyboardButton("🗑️ حذف المسابقة", callback_data=f"confirm_del_{quiz_id}_{user_id}"))
-            kb.add(InlineKeyboardButton("🔙 رجوع للخلف", callback_data=f"manage_quiz_{quiz_id}_{user_id}"))
+            kb.row(
+                InlineKeyboardButton("🚀 بدء التشغيل", callback_data=f"run_{quiz_id}_{user_id}"),
+                InlineKeyboardButton("🗑️ حذف", callback_data=f"confirm_del_{quiz_id}_{user_id}")
+            )
+            kb.add(InlineKeyboardButton("🔙 رجوع", callback_data=f"manage_quiz_{quiz_id}_{user_id}"))
             
-            await c.message.edit_text(f"⚙️ **إعدادات المسابقة: {q['quiz_name']}**\nتحكم في طريقة عمل مسابقتك الخاصة:", reply_markup=kb)
+            await c.message.edit_text(text, reply_markup=kb)
             return
 
-        # --- تفعيل/تعطيل التلميح الذكي (Smart Hint) ---
+        # --- 3. محركات التغيير الفوري (بدون نوافذ جديدة) ---
+
+        # تغيير عدد الأسئلة فوراً
+        if c.data.startswith('set_c_'):
+            quiz_id, count = data_parts[2], data_parts[3]
+            supabase.table("saved_quizzes").update({"questions_count": int(count)}).eq("id", quiz_id).execute()
+            await c.answer(f"📊 تم الضبط: {count} سؤال")
+            # إعادة تشغيل نفس الدالة لتحديث الشاشة
+            c.data = f"quiz_settings_{quiz_id}_{user_id}"
+            await handle_secure_actions(c, state)
+            return
+
+        # تغيير الوقت تفاعلياً (10 -> 15 -> 30 -> 45 -> 60)
+        if c.data.startswith('cycle_t_'):
+            quiz_id = data_parts[2]
+            res = supabase.table("saved_quizzes").select("time_limit").eq("id", quiz_id).single().execute()
+            t = res.data['time_limit']
+            new_t = 15 if t == 10 else (30 if t == 15 else (45 if t == 30 else (60 if t == 45 else 10)))
+            supabase.table("saved_quizzes").update({"time_limit": new_t}).eq("id", quiz_id).execute()
+            await c.answer(f"⏱️ الوقت الجديد: {new_t} ث")
+            c.data = f"quiz_settings_{quiz_id}_{user_id}"
+            await handle_secure_actions(c, state)
+            return
+
+        # تبديل نظام السرعة
+        if c.data.startswith('toggle_speed_'):
+            quiz_id = data_parts[2]
+            res = supabase.table("saved_quizzes").select("mode").eq("id", quiz_id).single().execute()
+            new_mode = "الوقت الكامل ⏱️" if res.data['mode'] == "السرعة ⚡" else "السرعة ⚡"
+            supabase.table("saved_quizzes").update({"mode": new_mode}).eq("id", quiz_id).execute()
+            await c.answer(f"🔄 {new_mode}")
+            c.data = f"quiz_settings_{quiz_id}_{user_id}"
+            await handle_secure_actions(c, state)
+            return
+
+        # تبديل التلميح
         if c.data.startswith('toggle_hint_'):
             quiz_id = data_parts[2]
             res = supabase.table("saved_quizzes").select("smart_hint").eq("id", quiz_id).single().execute()
             new_val = not res.data.get('smart_hint', False)
             supabase.table("saved_quizzes").update({"smart_hint": new_val}).eq("id", quiz_id).execute()
-            await c.answer("✅ تفعيل التلميح" if new_val else "❌ تعطيل التلميح")
-            await handle_secure_actions(c)
+            await c.answer("✅ تم التفعيل" if new_val else "❌ تم التعطيل")
+            c.data = f"quiz_settings_{quiz_id}_{user_id}"
+            await handle_secure_actions(c, state)
             return
 
-        # --- تعديل عدد الأسئلة (الخيارات: 5، 10، 15، 20، 30، 40) ---
-        if c.data.startswith('edit_count_'):
-            quiz_id = data_parts[2]
-            kb = InlineKeyboardMarkup(row_width=3)
-            counts = [5, 10, 15, 20, 30, 40]
-            for n in counts:
-                kb.insert(InlineKeyboardButton(f"{n} سؤال", callback_data=f"set_c_{quiz_id}_{n}_{user_id}"))
-            kb.add(InlineKeyboardButton("🔙 رجوع للإعدادات", callback_data=f"quiz_settings_{quiz_id}_{user_id}"))
-            await c.message.edit_text("📊 **تعديل عدد الأسئلة:**\nاختر عدد الأسئلة الجديد لمسابقتك:", reply_markup=kb)
-            return
-
-        if c.data.startswith('set_c_'):
-            quiz_id, count = data_parts[2], data_parts[3]
-            supabase.table("saved_quizzes").update({"questions_count": int(count)}).eq("id", quiz_id).execute()
-            await c.answer(f"✅ تم تغيير عدد الأسئلة إلى {count}")
-            await handle_secure_actions(c) 
-            return
-
-        # --- تعديل الوقت ---
-        if c.data.startswith('edit_time_'):
-            quiz_id = data_parts[2]
-            kb = InlineKeyboardMarkup(row_width=3)
-            for t in [10, 15, 20, 30, 45]:
-                kb.insert(InlineKeyboardButton(f"{t} ث", callback_data=f"set_t_{quiz_id}_{t}_{user_id}"))
-            kb.add(InlineKeyboardButton("🔙 رجوع للإعدادات", callback_data=f"quiz_settings_{quiz_id}_{user_id}"))
-            await c.message.edit_text("⏱️ **اختر وقت السؤال الجديد:**", reply_markup=kb)
-            return
-
-        if c.data.startswith('set_t_'):
-            quiz_id, t = data_parts[2], data_parts[3]
-            supabase.table("saved_quizzes").update({"time_limit": int(t)}).eq("id", quiz_id).execute()
-            await c.answer(f"✅ تم ضبط الوقت: {t} ثانية")
-            await handle_secure_actions(c)
-            return
-
-        # --- تبديل الأنظمة (تغيير اسم الزر تفاعلياً) ---
-        if c.data.startswith('toggle_speed_'):
-            quiz_id = data_parts[2]
-            res = supabase.table("saved_quizzes").select("mode").eq("id", quiz_id).single().execute()
-            new_mode = "الوقت ⏳" if res.data['mode'] == "السرعة ⚡" else "السرعة ⚡"
-            supabase.table("saved_quizzes").update({"mode": new_mode}).eq("id", quiz_id).execute()
-            await c.answer(f"🔄 تم التغيير إلى: {new_mode}")
-            await handle_secure_actions(c) 
-            return
-
-        if c.data.startswith('toggle_scope_'):
-            quiz_id = data_parts[2]
-            res = supabase.table("saved_quizzes").select("quiz_scope").eq("id", quiz_id).single().execute()
-            old_scope = res.data.get('quiz_scope', 'خاص')
-            new_scope = "عام" if old_scope == "خاص" else "خاص"
-            supabase.table("saved_quizzes").update({"quiz_scope": new_scope}).eq("id", quiz_id).execute()
-            msg = "🌐 النوع الجديد: عام" if new_scope == "عام" else "🔒 النوع الجديد: قروب"
-            await c.answer(msg)
-            await handle_secure_actions(c) 
-            return
-
-        # --- نظام الرجوع والحذف والتشغيل ---
-        if c.data.startswith('back_to_list'):
-            await show_quizzes(c)
-            return
-
-        if c.data.startswith('run_'):
-            await c.answer("🚀 جارٍ بدء المسابقة..")
-            quiz_id = data_parts[1]
-            res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
-            q_data = res.data
-            await countdown_timer(c.message, 5)
-            quiz_config = {
-                'cats': q_data.get('cats') or [],
-                'questions_count': int(q_data.get('questions_count', 10)),
-                'time_limit': int(q_data.get('time_limit', 15)),
-                'mode': q_data.get('mode', 'السرعة ⚡'),
-                'quiz_name': q_data.get('quiz_name', 'مسابقة'),
-                'smart_hint': q_data.get('smart_hint', False) # إضافة حالة التلميح للإعدادات المشغلة
-            }
-            await c.message.edit_text(f"🏁 **انطلقت الآن: {quiz_config['quiz_name']}**")
-            await start_quiz_engine(c.message.chat.id, quiz_config, c.from_user.first_name)
-            return
-
+        # --- 4. الحذف والتشغيل والرجوع ---
         if c.data.startswith('confirm_del_'):
             quiz_id = data_parts[2]
-            kb = InlineKeyboardMarkup(row_width=2).add(
+            kb = InlineKeyboardMarkup().add(
                 InlineKeyboardButton("✅ نعم، احذف", callback_data=f"final_del_{quiz_id}_{user_id}"),
                 InlineKeyboardButton("🚫 تراجع", callback_data=f"quiz_settings_{quiz_id}_{user_id}")
             )
-            await c.message.edit_text("⚠️ **تنبيه: هل أنت متأكد من حذف هذه المسابقة نهائياً؟**", reply_markup=kb)
+            await c.message.edit_text("⚠️ **هل أنت متأكد من الحذف النهائي؟**", reply_markup=kb)
             return
 
         if c.data.startswith('final_del_'):
             supabase.table("saved_quizzes").delete().eq("id", data_parts[2]).execute()
-            await c.answer("🗑️ تم الحذف بنجاح")
-            await show_quizzes(c)
+            await c.answer("🗑️ تم الحذف")
+            await show_quizzes(c) # دالة عرض القائمة الأصلية عندك
             return
 
-        if "close" in c.data:
-            await c.message.delete()
-            return
-
-        if "bot_dev_msg" in c.data:
-            await c.answer("🚧 قيد التطوير يا بطل!", show_alert=True)
+        if c.data.startswith('run_'):
+            quiz_id = data_parts[1]
+            await c.answer("🚀 انطلاق..")
+            # هنا يتم استدعاء محرك التشغيل الخاص بك
+            res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
+            await start_quiz_engine(c.message.chat.id, res.data, c.from_user.first_name)
             return
 
     except Exception as e:
-        logging.error(f"Error in Secure Logic: {e}")
+        logging.error(f"Secure Engine Error: {e}")
                                                         
 # ==========================================
 # 2. محركات التصميم والزخرفة والتلميح (نسخة الإشعارات العلوية الطائرة)
