@@ -1085,25 +1085,33 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         logging.error(f"Engine Error: {e}")
 
 # ==========================================
-# 4. رصد الإجابات (التصميم الملكي الموحد - ياسر)
+# 4. رصد الإجابات (النسخة الصامتة المعتمدة - ياسر)
 # ==========================================
 @dp.message_handler(lambda m: not m.text.startswith('/'))
 async def check_ans(m: types.Message):
     cid = m.chat.id
+    # التأكد أن هناك مسابقة قائمة والسؤال ما زال متاحاً للإجابة
     if cid in active_quizzes and active_quizzes[cid]['active']:
+        
+        # تنظيف الإجابة من الفراغات وتحويلها لصغير لضمان المطابقة
         user_ans = m.text.strip().lower()
-        correct_ans = active_quizzes[cid]['ans'].lower()
+        correct_ans = active_quizzes[cid]['ans'].strip().lower()
         
         if user_ans == correct_ans:
-            # رصد صامت: فقط يضيف الاسم للقائمة
-            if not any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners']):
-                active_quizzes[cid]['winners'].append({"name": m.from_user.first_name, "id": m.from_user.id})
+            # التحقق: إذا لم يكن هذا الشخص قد أجاب صح من قبل في نفس السؤال
+            already_won = any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners'])
+            
+            if not already_won:
+                # إضافة المتسابق للقائمة (الاسم الأول + الـ ID)
+                active_quizzes[cid]['winners'].append({
+                    "name": m.from_user.first_name, 
+                    "id": m.from_user.id
+                })
                 
-                # إذا كان نظام سرعة، يغلق السؤال فوراً لينتقل لرسالة النتائج
+                # --- حالة خاصة بنظام السرعة ---
                 if active_quizzes[cid]['mode'] == 'السرعة ⚡':
                     active_quizzes[cid]['active'] = False
-        # ملاحظة: حذفنا الردود هنا ليكون الرصد صامت والنتائج مجمعة في النهاية
-
+                    # في نظام السرعة، السؤال ينتهي فوراً عند أول إجابة صحيحة
 # ==========================================
 # 5. نهاية الملف: ضمان التشغيل 24/7 على Render
 # ==========================================
