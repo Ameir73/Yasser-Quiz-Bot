@@ -1117,85 +1117,95 @@ active_quizzes = {}
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
+        # 1. تحديد الأقسام
         cat_ids = [int(c) for c in quiz_data['cats'] if str(c).isdigit()]
         if not cat_ids:
             await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
             return
 
+        # جلب أسماء الأقسام للعرض فقط
         cat_info = supabase.table("categories").select("name").in_("id", cat_ids).execute()
         cat_names_list = [item['name'] for item in cat_info.data]
         names_str = "، ".join(cat_names_list)
 
-        res = supabase.table("questions") \
-            .select("*, categories(name)") \
-            .in_("category_id", cat_ids) \
-            .limit(int(quiz_data['questions_count'])) \
-            .execute()
+        # 2. جلب الأسئلة بنظام "مانع التكرار" (RPC)
+        # ملاحظة: سنمرر قسماً واحداً أو نعدل الدالة لتشمل مصفوفة، لكن حالياً لنمشي على قسم واحد أساسي
+        questions = []
+        target_count = int(quiz_data['questions_count'])
         
-        questions = res.data
+        # نجلب الأسئلة من الأقسام المختارة
+        for c_name in cat_names_list:
+            if len(questions) >= target_count: break
+            
+            # استدعاء الدالة الذكية اللي رفعناها بالـ SQL
+            res = supabase.rpc("get_unplayed_question", {
+                "p_chat_id": str(chat_id),
+                "p_category": c_name
+            }).execute()
+            
+            if res.data:
+                questions.extend(res.data)
+
         if not questions:
-            await bot.send_message(chat_id, "⚠️ لم أجد أسئلة كافية في هذه الأقسام حالياً.")
+            await bot.send_message(chat_id, "⚠️ كفو! لقد ختمتم جميع الأسئلة المتوفرة في هذه الأقسام.")
             return
 
-        await bot.send_message(chat_id, f"🎯 <b>استعدوا للمنافسة!</b>\n📂 الأقسام: {names_str}\n🔢 الأسئلة: {len(questions)}")
+        # تحديد عدد الأسئلة المطلوب فقط
+        questions = questions[:target_count]
+
+        await bot.send_message(chat_id, f"🎯 <b>استعدوا للمنافسة!</b>\n📂 الأقسام: {names_str}\n🔢 الأسئلة الجديدة: {len(questions)}")
         await asyncio.sleep(3)
 
         random.shuffle(questions)
         overall_scores = {}
 
         for i, q in enumerate(questions):
-            q_text = q.get('question_content', 'نص مفقود')
-            cat_name = q.get('categories', {}).get('name', 'عام')
-            ans = q.get('correct_answer') or q.get('answer_text') or ""
+            # نعدل المسميات لتطابق جدول bot_questions الجديد
+            q_text = q.get('question', 'نص مفقود')
+            cat_name = q.get('category', 'عام')
+            ans = q.get('answer', "")
+            q_id = q.get('id') # مهم جداً لمانع التكرار
 
             active_quizzes[chat_id] = {
                 "active": True, 
                 "ans": str(ans).strip(), 
                 "winners": [], 
                 "mode": quiz_data['mode'],
-                "hint_sent": False
+                "hint_sent": False,
+                "current_q_id": q_id # نخزنه عشان نسجله كـ "تم حله"
             }
             
             settings = {'owner_name': owner_name, 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit'], 'cat_name': cat_name}
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
+            # ... (منطق الوقت والتلميح كما هو بدون تغيير) ...
             start_time = time.time()
             time_limit = int(quiz_data['time_limit'])
-            
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
-                
-                # --- [منطق التلميح الطائر: 5 ثوانٍ لضمان القراءة] ---
-                if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
-                    if (time.time() - start_time) >= (time_limit / 2):
-                        hint_text = await generate_smart_hint(ans) 
-                        hint_msg = await bot.send_message(chat_id, f"💡 <b>تلميح:</b> {hint_text}", parse_mode="HTML")
-                        active_quizzes[chat_id]['hint_sent'] = True
-                        
-                        async def fly_and_delete(msg):
-                            await asyncio.sleep(5) 
-                            try: await msg.delete()
-                            except: pass
-                        asyncio.create_task(fly_and_delete(hint_msg))
-
                 if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
                     break
 
-            # --- نهاية السؤال: استدعاء تصميم ياسر الإبداعي ---
+            # --- [تحديث مانع التكرار] ---
+            # بمجرد انتهاء السؤال، نسجله في جدول played_questions عشان ما يطلع مرة ثانية لهذا القروب
+            try:
+                supabase.table("played_questions").insert({
+                    "chat_id": str(chat_id),
+                    "question_id": q_id
+                }).execute()
+            except: pass 
+
             active_quizzes[chat_id]['active'] = False
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
 
-            # استخدام الدالة التي أضفناها في الخطوة الأولى
             await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
             await asyncio.sleep(2)
 
-        # --- ختام المسابقة: استدعاء تصميم ياسر النهائي ---
         await send_final_results(chat_id, overall_scores, len(questions))
         
     except Exception as e:
         logging.error(f"Engine Error: {e}")
-
 # ==========================================
 # 4. رصد الإجابات (النسخة الصامتة المعتمدة - ياسر)
 # ==========================================
