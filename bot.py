@@ -871,28 +871,34 @@ async def show_quizzes(obj):
     kb = InlineKeyboardMarkup(row_width=1)
     
     if not res.data:
-        msg_text = "⚠️ ليس لديك مسابقات محفوظة باسمك حالياً."
-        if isinstance(obj, types.Message): await obj.answer(msg_text)
-        else: await obj.message.edit_text(msg_text)
+        # حتى لو ما عنده مسابقات، نظهر له زر "أسئلة البوت" عشان يقدر يسوي مسابقة جديدة
+        kb.add(InlineKeyboardButton("🤖 أسئلة البوت (رسمي)", callback_data="bot_setup_step1"))
+        kb.add(InlineKeyboardButton("❌ إغلاق النافذة", callback_data=f"close_{u_id}"))
+        msg_text = "⚠️ ليس لديك مسابقات محفوظة حالياً، يمكنك استخدام أسئلة البوت أدناه:"
+        if isinstance(obj, types.Message): await obj.answer(msg_text, reply_markup=kb)
+        else: await obj.message.edit_text(msg_text, reply_markup=kb)
         return
 
+    # عرض المسابقات المحفوظة
     for q in res.data:
         kb.add(InlineKeyboardButton(f"🏆 مسابقة: {q['quiz_name']}", callback_data=f"manage_quiz_{q['id']}_{u_id}"))
     
-    kb.add(InlineKeyboardButton("🤖 أسئلة البوت (قيد التطوير)", callback_data=f"bot_dev_msg_{u_id}"))
+    # --- الربط الجديد لأسئلة البوت ---
+    kb.add(InlineKeyboardButton("🤖 أسئلة البوت (رسمي)", callback_data="bot_setup_step1"))
     kb.add(InlineKeyboardButton("❌ إغلاق النافذة", callback_data=f"close_{u_id}"))
     
-    title = f"🎁 **قائمة مسابقاتك التي قمت باعدادها يا {user.first_name}:**"
+    title = f"🎁 **قائمة مسابقاتك المحفوظة يا {user.first_name}:**"
     if isinstance(obj, types.Message): await obj.reply(title, reply_markup=kb)
     else: await obj.message.edit_text(title, reply_markup=kb)
 
 # --- محرك الرجوع إلى قائمة المسابقات (ياسر) ---
-@dp.callback_query_handler(lambda c: c.data.startswith('back_to_list'), state="*")
+@dp.callback_query_handler(lambda c: c.data.startswith(('back_to_list', 'show_my_quizzes')), state="*")
 async def process_back_to_quizzes(c: types.CallbackQuery, state: FSMContext):
     await c.answer("🔙 العودة للقائمة...")
-    # هنا نستدعي دالة عرض المسابقات الأصلية
-    # ملاحظة: تأكد أن الدالة التي تعرض "قائمة مسابقاتك" اسمها show_quizzes
-    await show_quizzes(c) 
+    # مسح الذاكرة المؤقتة عند الرجوع للقائمة لضمان بداية نظيفة
+    await state.finish() 
+    # استدعاء الدالة الأم (تأكد أن اسمها show_quizzes أو حسب ما هي معرفة عندك فوق)
+    await show_quizzes(c)
 
 # ==========================================
 # [2] المحرك الأمني ولوحة التحكم الشاملة (النسخة التفاعلية المطورة)
