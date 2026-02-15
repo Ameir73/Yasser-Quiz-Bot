@@ -1254,10 +1254,10 @@ async def admin_dashboard(message: types.Message):
     )
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
-        InlineKeyboardButton("📊 إدارة أسئلة البوت", callback_data="manage_questions_menu"),
+        InlineKeyboardButton("📊 إدارة أسئلة البوت", callback_data="botq_main"), # تم تغيير الاسم لمنع التصادم
         InlineKeyboardButton("📝 مراجعة الطلبات المعلقة", callback_data="admin_view_pending"),
         InlineKeyboardButton("📢 إذاعة (نشر عام)", callback_data="admin_broadcast"),
-        InlineKeyboardButton("❌ إغلاق", callback_data="close_admin")
+        InlineKeyboardButton("❌ إغلاق", callback_data="botq_close") # تم تغيير الاسم لمنع التصادم
     )
     await message.answer(txt, reply_markup=kb, parse_mode="HTML")
 
@@ -1275,10 +1275,10 @@ async def admin_back_to_main(c: types.CallbackQuery):
     )
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
-        InlineKeyboardButton("📊 إدارة أسئلة البوت", callback_data="manage_questions_menu"),
+        InlineKeyboardButton("📊 إدارة أسئلة البوت", callback_data="botq_main"),
         InlineKeyboardButton("📝 مراجعة الطلبات المعلقة", callback_data="admin_view_pending"),
         InlineKeyboardButton("📢 إذاعة (نشر عام)", callback_data="admin_broadcast"),
-        InlineKeyboardButton("❌ إغلاق", callback_data="close_admin")
+        InlineKeyboardButton("❌ إغلاق", callback_data="botq_close")
     )
     await c.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
 
@@ -1331,24 +1331,71 @@ async def check_button_security(c: types.CallbackQuery, state: FSMContext):
     return True
 
 # ==========================================
-# 📊 إدارة أسئلة البوت (نظام الرفع الجماعي والأقسام)
+# 📊 إدارة أسئلة البوت (معالجة بادئة botq_ لمنع التصادم)
 # ==========================================
 
-@dp.callback_query_handler(lambda c: c.data == "manage_questions_menu", user_id=ADMIN_ID)
-async def manage_questions_menu(c: types.CallbackQuery):
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("📥 رفع أسئلة (Bulk)", callback_data="bulk_upload_start"),
-        InlineKeyboardButton("🗂️ عرض أقسام البوت", callback_data="view_all_categories"),
-        InlineKeyboardButton("⬅️ العودة للرئيسية", callback_data="admin_back")
-    )
-    await c.message.edit_text("🛠️ <b>إدارة الأسئلة</b>\nاختر الإجراء المطلوب:", reply_markup=kb, parse_mode="HTML")
+@dp.callback_query_handler(lambda c: c.data.startswith('botq_'), user_id=ADMIN_ID)
+async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext):
+    action = c.data.split('_')[1]
 
-@dp.callback_query_handler(lambda c: c.data == "bulk_upload_start", user_id=ADMIN_ID)
-async def start_bulk_upload(c: types.CallbackQuery, state: FSMContext):
-    await c.message.edit_text("📥 <b>أرسل الأسئلة بالصيغة:</b>\n\n<code>السؤال+الإجابة+القسم</code>", parse_mode="HTML")
-    await state.set_state("wait_for_bulk_questions")
+    if action == "close":
+        await c.message.delete()
+        await c.answer("تم الإغلاق")
 
+    elif action == "main":
+        kb = InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            InlineKeyboardButton("📥 رفع أسئلة (Bulk)", callback_data="botq_upload"),
+            InlineKeyboardButton("🗂️ عرض الأقسام", callback_data="botq_viewcats"),
+            InlineKeyboardButton("⬅️ عودة للرئيسية", callback_data="admin_back")
+        )
+        await c.message.edit_text("🛠️ <b>إدارة الأسئلة</b>\nاختر الإجراء المطلوب:", reply_markup=kb, parse_mode="HTML")
+
+    elif action == "upload":
+        await c.message.edit_text("📥 <b>أرسل الأسئلة بالصيغة:</b>\n\n<code>السؤال+الإجابة+القسم</code>", parse_mode="HTML")
+        await state.set_state("wait_for_bulk_questions")
+
+    elif action == "viewcats":
+        res = supabase.table("bot_questions").select("category").execute()
+        categories = list(set([item['category'] for item in res.data]))
+        kb = InlineKeyboardMarkup(row_width=2)
+        for cat in categories:
+            kb.insert(InlineKeyboardButton(f"📁 {cat}", callback_data=f"botq_managecat_{cat}"))
+        kb.add(InlineKeyboardButton("⬅️ عودة", callback_data="botq_main"))
+        await c.message.edit_text("🗂️ <b>أقسام البوت:</b>", reply_markup=kb, parse_mode="HTML")
+
+    elif action == "managecat":
+        cat_name = c.data.split('_')[2]
+        res = supabase.table("bot_questions").select("id", count="exact").eq("category", cat_name).execute()
+        kb = InlineKeyboardMarkup(row_width=1)
+        kb.add(
+            InlineKeyboardButton("🗑️ حذف القسم بالكامل", callback_data=f"botq_confirmdel_{cat_name}"),
+            InlineKeyboardButton("⬅️ العودة", callback_data="botq_viewcats")
+        )
+        await c.message.edit_text(f"📂 <b>القسم: {cat_name}</b>\n📊 العدد: {res.count}", reply_markup=kb, parse_mode="HTML")
+
+    elif action == "confirmdel":
+        cat_name = c.data.split('_')[2]
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("✅ نعم، احذف", callback_data=f"botq_finaldel_{cat_name}"),
+               InlineKeyboardButton("❌ تراجع", callback_data=f"botq_managecat_{cat_name}"))
+        await c.message.edit_text(f"⚠️ حذف قسم ( {cat_name} )؟", reply_markup=kb, parse_mode="HTML")
+
+    elif action == "finaldel":
+        cat_name = c.data.split('_')[2]
+        supabase.table("bot_questions").delete().eq("category", cat_name).execute()
+        await c.answer("🗑️ تم الحذف")
+        # العودة لقائمة الأقسام بعد الحذف
+        res = supabase.table("bot_questions").select("category").execute()
+        categories = list(set([item['category'] for item in res.data]))
+        kb = InlineKeyboardMarkup(row_width=2)
+        for cat in categories: kb.insert(InlineKeyboardButton(f"📁 {cat}", callback_data=f"botq_managecat_{cat}"))
+        kb.add(InlineKeyboardButton("⬅️ عودة", callback_data="botq_main"))
+        await c.message.edit_text("🗂️ <b>تم الحذف. الأقسام المتبقية:</b>", reply_markup=kb, parse_mode="HTML")
+
+    await c.answer()
+
+# --- معالج الرفع الجماعي ---
 @dp.message_handler(state="wait_for_bulk_questions", user_id=ADMIN_ID)
 async def process_bulk_questions(message: types.Message, state: FSMContext):
     lines = message.text.split('\n')
@@ -1363,44 +1410,7 @@ async def process_bulk_questions(message: types.Message, state: FSMContext):
                 except: error += 1
     await message.answer(f"✅ تم الرفع!\nنجاح: {success} | فشل: {error}")
     await state.finish()
-
-@dp.callback_query_handler(lambda c: c.data == "view_all_categories", user_id=ADMIN_ID)
-async def view_all_categories(c: types.CallbackQuery):
-    res = supabase.table("bot_questions").select("category").execute()
-    categories = list(set([item['category'] for item in res.data]))
-    kb = InlineKeyboardMarkup(row_width=2)
-    for cat in categories:
-        kb.insert(InlineKeyboardButton(f"📁 {cat}", callback_data=f"manage_cat_{cat}"))
-    kb.add(InlineKeyboardButton("⬅️ العودة", callback_data="manage_questions_menu"))
-    await c.message.edit_text("🗂️ <b>أقسام البوت:</b>", reply_markup=kb, parse_mode="HTML")
-
-@dp.callback_query_handler(lambda c: c.data.startswith("manage_cat_"), user_id=ADMIN_ID)
-async def manage_specific_category(c: types.CallbackQuery):
-    cat_name = c.data.replace("manage_cat_", "")
-    res = supabase.table("bot_questions").select("id", count="exact").eq("category", cat_name).execute()
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(
-        InlineKeyboardButton("👁️ عرض الأسئلة", callback_data=f"show_qs_{cat_name}"),
-        InlineKeyboardButton("🗑️ حذف القسم بالكامل", callback_data=f"confirm_del_cat_{cat_name}"),
-        InlineKeyboardButton("⬅️ العودة", callback_data="view_all_categories")
-    )
-    await c.message.edit_text(f"📂 <b>القسم: {cat_name}</b>\n📊 العدد: {res.count}", reply_markup=kb, parse_mode="HTML")
-
-@dp.callback_query_handler(lambda c: c.data.startswith("confirm_del_cat_"), user_id=ADMIN_ID)
-async def confirm_del_cat(c: types.CallbackQuery):
-    cat_name = c.data.replace("confirm_del_cat_", "")
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("✅ نعم، احذف", callback_data=f"final_del_cat_{cat_name}"),
-           InlineKeyboardButton("❌ تراجع", callback_data=f"manage_cat_{cat_name}"))
-    await c.message.edit_text(f"⚠️ حذف قسم ( {cat_name} )؟", reply_markup=kb, parse_mode="HTML")
-
-@dp.callback_query_handler(lambda c: c.data.startswith("final_del_cat_"), user_id=ADMIN_ID)
-async def final_del_cat(c: types.CallbackQuery):
-    cat_name = c.data.replace("final_del_cat_", "")
-    supabase.table("bot_questions").delete().eq("category", cat_name).execute()
-    await c.answer("🗑️ تم الحذف")
-    await view_all_categories(c)
-
+    
 # ==========================================
 # 5. نهاية الملف: ضمان التشغيل 24/7 على Render
 # ==========================================
