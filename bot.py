@@ -882,15 +882,24 @@ async def show_quizzes(obj):
     kb.add(InlineKeyboardButton("🤖 أسئلة البوت (قيد التطوير)", callback_data=f"bot_dev_msg_{u_id}"))
     kb.add(InlineKeyboardButton("❌ إغلاق النافذة", callback_data=f"close_{u_id}"))
     
-    title = f"🎁 **قائمة مسابقاتك يا {user.first_name}:**"
+    title = f"🎁 **قائمة مسابقاتك التي قمت باعدادها يا {user.first_name}:**"
     if isinstance(obj, types.Message): await obj.reply(title, reply_markup=kb)
     else: await obj.message.edit_text(title, reply_markup=kb)
 
-# # ==========================================
+# --- محرك الرجوع إلى قائمة المسابقات (ياسر) ---
+@dp.callback_query_handler(lambda c: c.data.startswith('back_to_list'), state="*")
+async def process_back_to_quizzes(c: types.CallbackQuery, state: FSMContext):
+    await c.answer("🔙 العودة للقائمة...")
+    # هنا نستدعي دالة عرض المسابقات الأصلية
+    # ملاحظة: تأكد أن الدالة التي تعرض "قائمة مسابقاتك" اسمها show_quizzes
+    await show_quizzes(c) 
+
+# ==========================================
 # [2] المحرك الأمني ولوحة التحكم الشاملة (النسخة التفاعلية المطورة)
 # ==========================================
 @dp.callback_query_handler(lambda c: c.data.startswith(('run_', 'confirm_del_', 'final_del_', 'manage_quiz_', 'quiz_settings_', 'back_to_list', 'toggle_speed_', 'toggle_scope_', 'toggle_hint_', 'cycle_t_', 'set_c_')), state="*")
 async def handle_secure_actions(c: types.CallbackQuery, state: FSMContext):
+    # ... بقية كود المحرك الأمني اللي عندك ...
     try:
         data_parts = c.data.split('_')
         # تحديد موقع الـ owner_id بناءً على نوع الكولباك
