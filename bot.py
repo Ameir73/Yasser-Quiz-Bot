@@ -1014,6 +1014,24 @@ async def handle_secure_actions(c: types.CallbackQuery, state: FSMContext):
             await handle_secure_actions(c, state)
             return
 
+        # تبديل النطاق (عامة 🌍 / خاصة 🔐)
+        if c.data.startswith('toggle_scope_'):
+            quiz_id = data_parts[2]
+            # جلب النطاق الحالي
+            res = supabase.table("saved_quizzes").select("quiz_scope").eq("id", quiz_id).single().execute()
+            old_scope = res.data.get('quiz_scope', 'خاص')
+            # التبديل بين عام وخاص
+            new_scope = "عام" if old_scope == "خاص" else "خاص"
+            
+            supabase.table("saved_quizzes").update({"quiz_scope": new_scope}).eq("id", quiz_id).execute()
+            await c.answer(f"🌐 النطاق الجديد: {'عامة 🌍' if new_scope == 'عام' else 'خاصة 🔐'}")
+            
+            # تحديث الشاشة
+            c.data = f"quiz_settings_{quiz_id}_{user_id}"
+            await handle_secure_actions(c, state)
+            return
+
+        # --- 4. الحذف والتشغيل والرجوع --- (هذا القسم موجود عندك أصلاً)
         # تبديل التلميح
         if c.data.startswith('toggle_hint_'):
             quiz_id = data_parts[2]
