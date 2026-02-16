@@ -1073,14 +1073,14 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         raw_cats = quiz_data.get('cats', [])
         is_bot = quiz_data.get('is_bot_quiz', False)
         
-        # 2. معالجة "مسار أسئلة البوت" (الجزء المعطل عندك)
+        # 2. معالجة [ مسار أسئلة البوت ] - (الذي يحتوي سؤال، إجابة، قسم فقط)
         if is_bot:
             names_str = "، ".join(raw_cats)
-            # جلب من جدول bot_questions والبحث بالاسم (category)
+            # جلب الأسئلة من جدول bot_questions والبحث في عمود "القسم" (اسم القسم مباشرة)
             res = supabase.table("bot_questions").select("*").in_("category", raw_cats).execute()
             questions = res.data
         else:
-            # 3. معالجة "مسار المسابقات الخاصة" (الشغال عندك)
+            # 3. معالجة [ مسار المسابقات الخاصة ] - (النظام القديم الشغال بـ IDs)
             cat_ids = [int(c) for c in raw_cats if str(c).isdigit()]
             if not cat_ids:
                 return await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
@@ -1091,22 +1091,22 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             res = supabase.table("questions").select("*, categories(name)").in_("category_id", cat_ids).execute()
             questions = res.data
 
-        # 4. التأكد من وجود الأسئلة قبل الانطلاق
+        # 4. التأكد من وجود الأسئلة
         if not questions:
-            return await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة في أقسام: {names_str}")
+            return await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة في قسم: ({names_str})")
 
-        # 5. خلط الأسئلة واختيار العدد المطلوب
+        # 5. خلط واختيار العدد المطلوب
         random.shuffle(questions)
         questions = questions[:int(quiz_data.get('questions_count', 10))]
 
-        # 6. رسالة البداية الملكية
-        await bot.send_message(chat_id, f"🚀 **استعدوا للانطلاق!**\n📂 الأقسام: {names_str}\n🔢 العدد: {len(questions)} سؤال")
+        # 6. رسالة انطلاق ياسر الملكية
+        await bot.send_message(chat_id, f"🚀 **انطلقنا الآن!**\n📂 الأقسام: {names_str}\n🔢 العدد: {len(questions)} سؤال")
         await asyncio.sleep(2)
 
-        # 7. حلقة الأسئلة (بدون تغيير في منطقك الشغال)
+        # 7. حلقة الأسئلة (تشغيل المسابقة)
         overall_scores = {}
         for i, q in enumerate(questions):
-            # توحيد جلب البيانات (عشان مسميات الأعمدة في جدول البوت)
+            # توحيد جلب البيانات بذكاء ليتناسب مع الجدولين
             q_text = q.get('question') or q.get('question_content') or 'نص مفقود'
             cat_name = q.get('category') or q.get('categories', {}).get('name', 'عام')
             ans = q.get('answer') or q.get('correct_answer') or q.get('answer_text') or ""
@@ -1124,7 +1124,8 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
-                # منطق التلميح الطائر حقك (شغال)
+                
+                # منطق التلميح (إذا فعلته)
                 if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                     if (time.time() - start_time) >= (time_limit / 2):
                         hint_text = await generate_smart_hint(ans) 
@@ -1135,6 +1136,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                 if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
                     break
 
+            # معالجة النتائج
             active_quizzes[chat_id]['active'] = False
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
