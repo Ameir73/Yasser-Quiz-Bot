@@ -1224,25 +1224,30 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         logging.error(f"Engine Error: {e}")
 
 # ==========================================
-# 🎯 مستمع الإجابات (يجب وضعه هنا ليعمل فوراً)
+# 🎯 مستمع الإجابات (صياد الإجابات الصحيحة)
 # ==========================================
 @dp.message_handler(lambda m: m.chat.id in active_quizzes and active_quizzes[m.chat.id]['active'])
 async def handle_quiz_responses(message: types.Message):
     chat_id = message.chat.id
     quiz = active_quizzes[chat_id]
     
-    # مقارنة الإجابات المنظفة
-    if clean_text(message.text) == clean_text(quiz['ans']):
+    # دالة تنظيف النص لضمان قبول الإجابة (تجنب مشاكل الهمزات والتاء المربوطة)
+    def clean(t): 
+        return str(t).strip().lower().replace('أ','ا').replace('إ','ا').replace('آ','ا').replace('ة','ه').replace('ى','ي')
+    
+    # إذا كانت إجابة المستخدم تطابق الإجابة الصحيحة
+    if clean(message.text) == clean(quiz['ans']):
         user_id = message.from_user.id
         user_name = message.from_user.first_name
         
+        # التأكد أن المستخدم لم يسبق له الفوز في هذا السؤال
         if not any(w['id'] == user_id for w in quiz['winners']):
             quiz['winners'].append({"id": user_id, "name": user_name})
             await message.reply(f"⭐ كفو يا {user_name}! إجابة صحيحة")
             
+            # إذا كان وضع السرعة، نوقف السؤال فوراً عند أول إجابة
             if quiz['mode'] == 'السرعة ⚡':
                 quiz['active'] = False
-
 
 # ==========================================
 # 4. رصد الإجابات (النسخة الصامتة المعتمدة - ياسر)
