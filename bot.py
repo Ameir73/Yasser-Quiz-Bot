@@ -1069,87 +1069,31 @@ active_quizzes = {}
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # 1. استخراج الأقسام المطلوبة
         raw_cats = quiz_data.get('cats', [])
-        is_bot = quiz_data.get('is_bot_quiz', False)
         
-        if not raw_cats:
-            return await bot.send_message(chat_id, "⚠️ خطأ: قائمة الأقسام فارغة في البيانات.")
+        # 🎯 الحركة الذكية: لو أول قسم هو نص (ليس رقماً)، فالمسابقة "بوت" غصب
+        first_cat = str(raw_cats[0]) if raw_cats else ""
+        is_actually_bot = not first_cat.isdigit() 
 
-        # 2. محرك الجلب المرن (Flex-Fetch)
-        if is_bot:
-            # نحاول الجلب بـ "الاسم" أولاً (لأنك قلت الجدول فيه category كـ نص)
+        if is_actually_bot:
+            # --- [ مسار أسئلة البوت ] ---
+            # جلب من bot_questions لأن الأقسام نصوص
             res = supabase.table("bot_questions").select("*").in_("category", raw_cats).execute()
             questions = res.data
-            
-            # إذا لم نجد نتائج، نحاول الجلب بـ "الآيدي" (للاحتياط)
-            if not questions:
-                # تحويل القيم لأرقام فقط إذا كانت قابلة للتحويل
-                int_cats = [int(c) for c in raw_cats if str(c).isdigit()]
-                if int_cats:
-                    res = supabase.table("bot_questions").select("*").in_("category_id", int_cats).execute()
-                    questions = res.data
-            
-            names_str = "، ".join([str(c) for c in raw_cats])
+            names_str = "، ".join(raw_cats)
         else:
-            # المسار الخاص بك (شغال)
+            # --- [ مسار المسابقات الخاصة ] ---
+            # جلب من questions لأن الأقسام أرقام IDs
             cat_ids = [int(c) for c in raw_cats if str(c).isdigit()]
             cat_info = supabase.table("categories").select("name").in_("id", cat_ids).execute()
             names_str = "، ".join([item['name'] for item in cat_info.data])
             res = supabase.table("questions").select("*, categories(name)").in_("category_id", cat_ids).execute()
             questions = res.data
 
-        # 3. فحص التشخيص (لو ما اشتغل بيعلمك ليش)
+        # 3. فحص النتائج
         if not questions:
-            debug_info = f"🔍 تشخيص: النوع={'بوت' if is_bot else 'خاص'}, القيم={raw_cats}"
-            return await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة!\n{debug_info}")
-
-        # 4. الإعداد والخلط
-        random.shuffle(questions)
-        questions = questions[:int(quiz_data.get('questions_count', 10))]
-
-        # 5. رسالة البداية
-        await bot.send_message(chat_id, f"🚀 **انطلقنا!**\n📂 الأقسام: {names_str}\n🔢 العدد: {len(questions)} سؤال")
-        await asyncio.sleep(2)
-
-        overall_scores = {}
-        for i, q in enumerate(questions):
-            # 🎯 قراءة البيانات بذكاء (تدعم كل الاحتمالات)
-            q_text = q.get('question') or q.get('question_content') or 'نص مفقود'
-            ans = q.get('answer') or q.get('correct_answer') or q.get('answer_text') or ""
-            # جلب اسم القسم
-            if is_bot:
-                cat_name = q.get('category', 'تحدي ياسر')
-            else:
-                cat_name = q.get('categories', {}).get('name', 'عام')
-
-            active_quizzes[chat_id] = {
-                "active": True, "ans": str(ans).strip(), "winners": [], 
-                "mode": quiz_data.get('mode', 'السرعة ⚡'), "hint_sent": False
-            }
+            return await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة في: {names_str}")
             
-            settings = {'owner_name': owner_name, 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit'], 'cat_name': cat_name}
-            await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
-            
-            start_time = time.time()
-            limit = int(quiz_data.get('time_limit', 15))
-            while time.time() - start_time < limit:
-                await asyncio.sleep(0.1)
-                if not active_quizzes[chat_id]['active']: break
-
-            active_quizzes[chat_id]['active'] = False
-            for w in active_quizzes[chat_id]['winners']:
-                overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
-
-            await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
-            await asyncio.sleep(2)
-
-        await send_final_results(chat_id, overall_scores, len(questions))
-
-    except Exception as e:
-        import logging
-        logging.error(f"ENGINE ERROR: {e}")
-        await bot.send_message(chat_id, f"❌ حدث خطأ فني: {e}")
 # ==========================================
 # 4. رصد الإجابات (النسخة الصامتة المعتمدة - ياسر)
 # ==========================================
