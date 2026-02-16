@@ -1331,19 +1331,19 @@ async def check_button_security(c: types.CallbackQuery, state: FSMContext):
     return True
 
 # ==========================================
-# 📊 إدارة أسئلة البوت (نسخة حل التعليق النهائي)
+# 📊 إدارة أسئلة البوت (نسخة الرفع المستمر + حل التعليق)
 # ==========================================
 
 @dp.callback_query_handler(lambda c: c.data.startswith('botq_'), user_id=ADMIN_ID)
 async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext):
-    # استخدام replace بدلاً من split للتعامل مع الأسماء الطويلة والإيموجي
-    data = c.data
-    
-    if data == "botq_close":
+    data_parts = c.data.split('_')
+    action = data_parts[1]
+
+    if action == "close":
         await c.message.delete()
         await c.answer("تم الإغلاق")
 
-    elif data == "botq_main":
+    elif action == "main":
         kb = InlineKeyboardMarkup(row_width=2)
         kb.add(
             InlineKeyboardButton("📥 رفع أسئلة (Bulk)", callback_data="botq_upload"),
@@ -1352,56 +1352,84 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
         )
         await c.message.edit_text("🛠️ <b>إدارة الأسئلة</b>\nاختر الإجراء المطلوب:", reply_markup=kb, parse_mode="HTML")
 
-    elif data == "botq_upload":
-        await c.message.edit_text("📥 <b>أرسل الأسئلة بالصيغة:</b>\n\n<code>السؤال+الإجابة+القسم</code>", parse_mode="HTML")
+    elif action == "upload":
+        await c.message.edit_text("📥 <b>أرسل الأسئلة بالصيغة:</b>\n\n<code>السؤال+الإجابة+القسم</code>\n\nأو أرسل <b>خروج</b> للعودة.", parse_mode="HTML")
         await state.set_state("wait_for_bulk_questions")
 
-    elif data == "botq_viewcats":
-        # نسحب الأقسام من جدول الأسئلة فقط لضمان عدم خلطها مع جدول الأعضاء
+    elif action == "viewcats":
         res = supabase.table("bot_questions").select("category").execute()
         categories = list(set([item['category'] for item in res.data]))
+        await state.update_data(current_categories=categories)
         
         kb = InlineKeyboardMarkup(row_width=2)
-        for cat in categories:
-            # استخدمنا بادئة مختصرة mng_ لضمان عدم تجاوز 64 حرف
-            kb.insert(InlineKeyboardButton(f"📁 {cat}", callback_data=f"botq_mng_{cat}"))
+        for i, cat in enumerate(categories):
+            kb.insert(InlineKeyboardButton(f"📁 {cat}", callback_data=f"botq_mng_{i}"))
         
         kb.add(InlineKeyboardButton("⬅️ عودة", callback_data="botq_main"))
-        await c.message.edit_text("🗂️ <b>أقسام الأسئلة (للأدمن):</b>", reply_markup=kb, parse_mode="HTML")
+        await c.message.edit_text("🗂️ <b>أقسام الأسئلة الحالية:</b>", reply_markup=kb, parse_mode="HTML")
 
-    elif data.startswith("botq_mng_"):
-        cat_name = data.replace('botq_mng_', '')
-        res = supabase.table("bot_questions").select("id", count="exact").eq("category", cat_name).execute()
+    elif action == "mng":
+        idx = int(data_parts[2])
+        user_data = await state.get_data()
+        categories = user_data.get('current_categories', [])
         
-        kb = InlineKeyboardMarkup(row_width=1)
-        kb.add(
-            InlineKeyboardButton("🗑️ حذف القسم بالكامل", callback_data=f"botq_del_{cat_name}"),
-            InlineKeyboardButton("⬅️ العودة", callback_data="botq_viewcats")
-        )
-        await c.message.edit_text(f"📂 <b>القسم: {cat_name}</b>\n📊 العدد: {res.count if res.count else 0}", reply_markup=kb, parse_mode="HTML")
+        if idx < len(categories):
+            cat_name = categories[idx]
+            res = supabase.table("bot_questions").select("id", count="exact").eq("category", cat_name).execute()
+            kb = InlineKeyboardMarkup(row_width=1)
+            kb.add(
+                InlineKeyboardButton("🗑️ حذف القسم", callback_data=f"botq_del_{idx}"),
+                InlineKeyboardButton("⬅️ عودة", callback_data="botq_viewcats")
+            )
+            await c.message.edit_text(f"📂 <b>القسم: {cat_name}</b>\n📊 العدد: {res.count}", reply_markup=kb, parse_mode="HTML")
 
-    elif data.startswith("botq_del_"):
-        cat_name = data.replace('botq_del_', '')
+    elif action == "del":
+        idx = int(data_parts[2])
+        user_data = await state.get_data()
+        cat_name = user_data.get('current_categories', [])[idx]
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("✅ نعم، احذف", callback_data=f"botq_fndel_{cat_name}"),
-               InlineKeyboardButton("❌ تراجع", callback_data=f"botq_mng_{cat_name}"))
+        kb.add(InlineKeyboardButton("✅ نعم، احذف", callback_data=f"botq_fndel_{idx}"),
+               InlineKeyboardButton("❌ تراجع", callback_data=f"botq_mng_{idx}"))
         await c.message.edit_text(f"⚠️ حذف قسم ( {cat_name} )؟", reply_markup=kb, parse_mode="HTML")
 
-    elif data.startswith("botq_fndel_"):
-        cat_name = data.replace('botq_fndel_', '')
-        # يحذف فقط من جدول الأسئلة ولا يلمس جدول الأقسام categories
+    elif action == "fndel":
+        idx = int(data_parts[2])
+        user_data = await state.get_data()
+        cat_name = user_data.get('current_categories', [])[idx]
         supabase.table("bot_questions").delete().eq("category", cat_name).execute()
         await c.answer(f"🗑️ تم حذف {cat_name}")
-        
-        # تحديث القائمة فوراً
-        res = supabase.table("bot_questions").select("category").execute()
-        categories = list(set([item['category'] for item in res.data]))
-        kb = InlineKeyboardMarkup(row_width=2)
-        for cat in categories: kb.insert(InlineKeyboardButton(f"📁 {cat}", callback_data=f"botq_mng_{cat}"))
-        kb.add(InlineKeyboardButton("⬅️ عودة", callback_data="botq_main"))
-        await c.message.edit_text("🗂️ تم الحذف. الأقسام المتبقية:", reply_markup=kb, parse_mode="HTML")
+        await process_bot_questions_panel(c, state)
 
     await c.answer()
+
+# --- معالج الرفع الجماعي (يرجعك للرفع تلقائياً) ---
+@dp.message_handler(state="wait_for_bulk_questions", user_id=ADMIN_ID)
+async def process_bulk_questions(message: types.Message, state: FSMContext):
+    if message.text in ["خروج", "إلغاء", "back"]:
+        await state.finish()
+        await message.answer("✅ تم الخروج من وضع الرفع.")
+        return
+
+    lines = message.text.split('\n')
+    success, error = 0, 0
+    for line in lines:
+        if '+' in line:
+            parts = line.split('+')
+            if len(parts) == 3:
+                try:
+                    supabase.table("bot_questions").insert({
+                        "question": parts[0].strip(), 
+                        "answer": parts[1].strip(), 
+                        "category": parts[2].strip()
+                    }).execute()
+                    success += 1
+                except: error += 1
+            else: error += 1
+        else: error += 1
+
+    # إرسال النتيجة ثم البقاء في نفس الحالة للرفع مرة أخرى
+    await message.answer(f"✅ تم الرفع! نجاح: {success} | فشل: {error}")
+    await message.answer("📥 <b>أرسل الدفعة التالية الآن:</b>\n(أو أرسل 'خروج' للانتهاء)", parse_mode="HTML")
     
 # ==========================================
 # 5. نهاية الملف: ضمان التشغيل 24/7 على Render
