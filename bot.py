@@ -1071,48 +1071,51 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
         # 1. استخراج المتغيرات الأساسية
         quiz_title = quiz_data.get('quiz_name') or quiz_data.get('name') or "مسابقة"
-        # التحقق الصارم من نوع المسابقة
-        is_bot = quiz_data.get('is_bot_quiz', False) or quiz_data.get('source') == 'bot'
-        q_count = int(quiz_data.get('questions_count', 10))
         selected_cats = quiz_data.get('cats', [])
+        q_count = int(quiz_data.get('questions_count', 10))
+
+        # --- [ تصحيح المسار التلقائي لياسر ] ---
+        # إذا كان المختار هو "ألغاز" أو أي قسم من أقسام البوت، نجبره على مسار البوت
+        bot_sections = ["ألغاز", "ثقافة", "إسلاميات", "رياضة"] # أضف هنا أسماء أقسام البوت
+        
+        is_bot = False
+        if any(cat in bot_sections for cat in selected_cats) or quiz_data.get('is_bot_quiz'):
+            is_bot = True
+        # ---------------------------------------
 
         questions = []
         try:
             if is_bot:
-                # --- مسار أسئلة البوت فقط (ممنوع الاقتراب من جدول الأعضاء) ---
-                # البحث بالاسم النصي للقسم في جدول bot_questions
+                # مسار البوت الصارم: يبحث في bot_questions فقط
                 res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
-                questions = res.data
-                
-                # إذا لم يجد القسم المحدد، يسحب عشوائياً من نفس جدول البوت فقط
-                if not questions:
+                if not res.data: # إذا لم يجد القسم المحدد، يسحب أي أسئلة من جدول البوت فقط
                     res = supabase.table("bot_questions").select("*").limit(q_count).execute()
-                    questions = res.data
+                questions = res.data
             else:
-                # --- مسار أسئلة الأعضاء فقط (ممنوع الاقتراب من جدول البوت) ---
+                # مسار الأعضاء الصارم: يبحث في questions فقط
                 cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
                 if cat_ids:
                     res = supabase.table("questions").select("*").in_("category_id", cat_ids).limit(q_count).execute()
                     questions = res.data
                 else:
-                    # طوارئ جدول الأعضاء: يسحب من جدول الأعضاء فقط
+                    # إذا لم تتوفر IDs، يجلب من جدول الأعضاء العام
                     res = supabase.table("questions").select("*").limit(q_count).execute()
                     questions = res.data
-                    
-        except Exception as db_err:
-            logging.error(f"Database Fetch Error: {db_err}")
-            await bot.send_message(chat_id, f"❌ **خطأ في استعلام المصدر:**\n`{str(db_err)}`", parse_mode="Markdown")
+
+        except Exception as e:
+            logging.error(f"Fetch Error: {e}")
+            await bot.send_message(chat_id, "❌ فشل جلب الأسئلة من المصدر.")
             return
 
-        # 2. فحص النتيجة (منع القفز التلقائي لجدول آخر)
+        # فحص نهائي لمنع الخلط
         if not questions:
-            source_txt = "البوت 🤖" if is_bot else "الأعضاء 👤"
-            await bot.send_message(chat_id, f"⚠️ **فشل العثور على أسئلة!**\nالمصدر: `{source_txt}`\nتأكد من وجود بيانات في القسم المختار.")
+            await bot.send_message(chat_id, "⚠️ لم يتم العثور على أسئلة في المصدر المختار.")
             return
 
-        # رسالة الانطلاق (تصميم ياسر الملكي)
-        start_msg = f"🎯 <b>انطلقت الآن: {quiz_title}</b>\n📂 المصدر: {'أسئلة البوت 🤖' if is_bot else 'أقسام الأعضاء 👤'}\n🔢 الأسئلة: {len(questions)}"
-        await bot.send_message(chat_id, start_msg, parse_mode="HTML")
+        # تحديث رسالة الانطلاق لتعكس المصدر الصحيح
+        source_label = "أسئلة البوت 🤖" if is_bot else "أقسام الأعضاء 👤"
+        start_msg = f"🎯 <b>انطلقت الآن: {quiz_title}</b>\n📂 المصدر: {source_label}\n🔢 الأسئلة: {len(questions)}"
+        await bot.send_message(chat_id, start_msg, parse_mode="HTML"
         await asyncio.sleep(2)
 
         random.shuffle(questions)
