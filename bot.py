@@ -1105,144 +1105,96 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     )
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
     
-# ==========================================
-# 3. محرك تشغيل المسابقة (المطور بتصاميم ياسر الملكية)
-# ==========================================
+# ============================================================
+# 🚀 [القسم 3] محرك تشغيل المسابقة المطور (ياسر الملكي)
+# ============================================================
 active_quizzes = {}
-
-# دالة تنظيف النص لضمان قبول الإجابة (تجنب مشاكل الهمزات والتاء المربوطة)
-def clean_text(text):
-    if not text: return ""
-    text = str(text).strip().lower()
-    replacements = {
-        'أ': 'ا', 'إ': 'ا', 'آ': 'ا',
-        'ة': 'ه', 'ى': 'ي', 'ئ': 'ي', 'ؤ': 'و'
-    }
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-    return text
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # 1. تحديد الأقسام
-        cat_ids = [int(c) for c in quiz_data['cats'] if str(c).isdigit()]
-        if not cat_ids:
-            await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
-            return
-
-        cat_info = supabase.table("categories").select("name").in_("id", cat_ids).execute()
-        cat_names_list = [item['name'] for item in cat_info.data]
-        names_str = "، ".join(cat_names_list)
-
-        # 2. جلب الأسئلة بنظام "مانع التكرار" (RPC)
-        questions = []
+        # 1. جلب الأسئلة باستخدام الدالة التي أصلحناها في سوبابيس
+        cat_ids = quiz_data.get('cats', [])
         target_count = int(quiz_data.get('questions_count', 10))
         
-        # توزيع الجلب على الأقسام لضمان التنوع
-        per_cat_limit = max(1, target_count // len(cat_names_list)) + 2
-
-        for c_name in cat_names_list:
+        # جلب أسماء الأقسام
+        cat_info = supabase.table("categories").select("name").in_("id", cat_ids).execute()
+        cat_names = [c['name'] for c in cat_info.data]
+        
+        questions = []
+        for c_name in cat_names:
             if len(questions) >= target_count: break
-            res = supabase.rpc("get_unplayed_question", {
-                "p_chat_id": str(chat_id),
-                "p_category": c_name
-            }).execute()
-            
-            if res.data:
-                questions.extend(res.data[:per_cat_limit])
+            res = supabase.rpc("get_unplayed_question", {"p_chat_id": str(chat_id), "p_category": c_name}).execute()
+            if res.data: questions.extend(res.data)
 
         if not questions:
-            await bot.send_message(chat_id, "⚠️ كفو! لقد ختمتم جميع الأسئلة المتوفرة في هذه الأقسام.")
-            return
+            return await bot.send_message(chat_id, "⚠️ لم أجد أسئلة جديدة في هذه الأقسام!")
 
-        # التصفية النهائية واللخبطة
         random.shuffle(questions)
         questions = questions[:target_count]
-
-        await bot.send_message(chat_id, f"🎯 <b>استعدوا للمنافسة!</b>\n📂 الأقسام: {names_str}\n🔢 الأسئلة الجديدة: {len(questions)}")
-        await asyncio.sleep(3)
-
         overall_scores = {}
 
+        # 2. حلقة تشغيل الأسئلة
         for i, q in enumerate(questions):
-            q_text = q.get('question') or q.get('question_text') or 'نص مفقود'
-            cat_name = q.get('category', 'عام')
-            ans = str(q.get('answer')).strip()
-            q_id = q.get('id')
+            ans = str(q.get('answer', '')).strip()
+            alt_ans = str(q.get('alternative_answer', '')).strip() # دعم الإجابة البديلة
 
             active_quizzes[chat_id] = {
                 "active": True, 
                 "ans": ans, 
+                "alt_ans": alt_ans if alt_ans else None,
                 "winners": [], 
                 "mode": quiz_data['mode'],
-                "hint_sent": False,
-                "current_q_id": q_id
+                "hint_sent": False
             }
             
-            settings = {'owner_name': owner_name, 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit'], 'cat_name': cat_name}
-            await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
+            # إرسال السؤال بالتصميم الملكي
+            settings = {'owner_name': owner_name, 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit'], 'cat_name': q.get('category')}
+            await send_quiz_question(chat_id, {'question_text': q.get('question')}, i+1, len(questions), settings)
             
-            # --- منطق الوقت والتلميح ---
+            # وقت الانتظار
+            limit = int(quiz_data['time_limit'])
             start_time = time.time()
-            time_limit = int(quiz_data['time_limit'])
-            while time.time() - start_time < time_limit:
+            while time.time() - start_time < limit:
                 await asyncio.sleep(0.1)
-                
-                # إرسال تلميح في منتصف الوقت
-                if (time.time() - start_time > time_limit / 2) and not active_quizzes[chat_id]['hint_sent']:
-                    hint = await generate_smart_hint(ans)
-                    await bot.send_message(chat_id, hint)
-                    active_quizzes[chat_id]['hint_sent'] = True
+                if not active_quizzes[chat_id]['active']: break # توقف إذا أجاب أحد في وضع السرعة
+            
+            # تسجيل السؤال كملعوب (مانع التكرار)
+            try: supabase.table("played_questions").insert({"chat_id": str(chat_id), "question_id": q['id']}).execute()
+            except: pass
 
-                if not active_quizzes[chat_id]['active']:
-                    break
-
-            # --- [تحديث مانع التكرار] ---
-            try:
-                supabase.table("played_questions").insert({
-                    "chat_id": str(chat_id),
-                    "question_id": q_id
-                }).execute()
-            except: pass 
-
+            # تحديث النقاط وعرض النتائج
             active_quizzes[chat_id]['active'] = False
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
-
+            
             await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
             await asyncio.sleep(2)
 
         await send_final_results(chat_id, overall_scores, len(questions))
         if chat_id in active_quizzes: del active_quizzes[chat_id]
-        
+
     except Exception as e:
         logging.error(f"Engine Error: {e}")
 
-# ==========================================
-# 🎯 مستمع الإجابات (صياد الإجابات الصحيحة)
-# ==========================================
+# ============================================================
+# 🎯 [القسم 4] مستمع الإجابات الذكي (يدعم البديلة)
+# ============================================================
 @dp.message_handler(lambda m: m.chat.id in active_quizzes and active_quizzes[m.chat.id]['active'])
 async def handle_quiz_responses(message: types.Message):
     chat_id = message.chat.id
     quiz = active_quizzes[chat_id]
     
-    # دالة تنظيف النص لضمان قبول الإجابة (تجنب مشاكل الهمزات والتاء المربوطة)
-    def clean(t): 
-        return str(t).strip().lower().replace('أ','ا').replace('إ','ا').replace('آ','ا').replace('ة','ه').replace('ى','ي')
+    def clean(t): return str(t).strip().lower().replace('أ','ا').replace('إ','ا').replace('آ','ا').replace('ة','ه').replace('ى','ي')
     
-    # إذا كانت إجابة المستخدم تطابق الإجابة الصحيحة
-    if clean(message.text) == clean(quiz['ans']):
+    u_ans = clean(message.text)
+    if u_ans == clean(quiz['ans']) or (quiz['alt_ans'] and u_ans == clean(quiz['alt_ans'])):
         user_id = message.from_user.id
-        user_name = message.from_user.first_name
-        
-        # التأكد أن المستخدم لم يسبق له الفوز في هذا السؤال
         if not any(w['id'] == user_id for w in quiz['winners']):
-            quiz['winners'].append({"id": user_id, "name": user_name})
-            await message.reply(f"⭐ كفو يا {user_name}! إجابة صحيحة")
-            
-            # إذا كان وضع السرعة، نوقف السؤال فوراً عند أول إجابة
+            quiz['winners'].append({"id": user_id, "name": message.from_user.first_name})
+            await message.reply(f"⭐ كفو يا {message.from_user.first_name}! إجابة صحيحة")
             if quiz['mode'] == 'السرعة ⚡':
-                quiz['active'] = False
+                quiz['active'] = Fals
+                
 
 # ==========================================
 # 4. رصد الإجابات (النسخة الصامتة المعتمدة - ياسر)
