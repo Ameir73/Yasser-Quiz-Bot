@@ -1030,20 +1030,9 @@ async def handle_secure_actions(c: types.CallbackQuery, state: FSMContext):
             c.data = f"quiz_settings_{quiz_id}_{user_id}"
             await handle_secure_actions(c, state)
             return
-
-        # --- 4. الحذف والتشغيل والرجوع --- (هذا القسم موجود عندك أصلاً)
-        # تبديل التلميح
-        if c.data.startswith('toggle_hint_'):
-            quiz_id = data_parts[2]
-            res = supabase.table("saved_quizzes").select("smart_hint").eq("id", quiz_id).single().execute()
-            new_val = not res.data.get('smart_hint', False)
-            supabase.table("saved_quizzes").update({"smart_hint": new_val}).eq("id", quiz_id).execute()
-            await c.answer("✅ تم التفعيل" if new_val else "❌ تم التعطيل")
-            c.data = f"quiz_settings_{quiz_id}_{user_id}"
-            await handle_secure_actions(c, state)
-            return
-
-        # --- 4. الحذف والتشغيل والرجوع ---
+# ============================================================
+        # 🛠️ [قسم التحكم] الحذف والتشغيل والرجوع
+        # ============================================================
         if c.data.startswith('confirm_del_'):
             quiz_id = data_parts[2]
             kb = InlineKeyboardMarkup().add(
@@ -1056,24 +1045,27 @@ async def handle_secure_actions(c: types.CallbackQuery, state: FSMContext):
         if c.data.startswith('final_del_'):
             supabase.table("saved_quizzes").delete().eq("id", data_parts[2]).execute()
             await c.answer("🗑️ تم الحذف")
-            await show_quizzes(c) # دالة عرض القائمة الأصلية عندك
+            await show_quizzes(c) 
             return
 
         if c.data.startswith('run_'):
             quiz_id = data_parts[1]
             await c.answer("🚀 انطلاق..")
-            # هنا يتم استدعاء محرك التشغيل الخاص بك
+            # جلب بيانات المسابقة المحفوظة لتمريرها للمحرك
             res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
-            await start_quiz_engine(c.message.chat.id, res.data, c.from_user.first_name)
+            if res.data:
+                await start_quiz_engine(c.message.chat.id, res.data, c.from_user.first_name)
             return
 
     except Exception as e:
         logging.error(f"Secure Engine Error: {e}")
-                                                        
-# ==========================================
-# 2. محركات التصميم والزخرفة والتلميح (نسخة الإشعارات العلوية الطائرة)
-# ==========================================
+
+# ============================================================
+# 🎨 [قسم التصميم] محركات الزخرفة والتلميح الذكي
+# ============================================================
+
 async def countdown_timer(message: types.Message, seconds=5):
+    """عداد تنازلي ملكي قبل بدء المسابقة"""
     try:
         for i in range(seconds, 0, -1):
             await message.edit_text(f"🚀 **تجهيز المسابقة...**\n\nستبدأ خلال: {i}")
@@ -1081,23 +1073,26 @@ async def countdown_timer(message: types.Message, seconds=5):
     except Exception as e:
         logging.error(f"Countdown Error: {e}")
 
-# --- [دالة توليد التلميح الذكي] ---
 async def generate_smart_hint(answer_text):
+    """توليد تلميحات ذكية بناءً على طول الإجابة أو باستخدام الذكاء الاصطناعي"""
     answer_text = str(answer_text).strip()
     words = answer_text.split()
+    
     if len(words) == 1:
         if len(answer_text) <= 3:
-            return f"💡 يبدأ بحرف ( {answer_text[0]} )"
-        return f"💡 يبدأ بـ ( {answer_text[:2]} ) وينتهي بـ ( {answer_text[-1]} )"
+            return f"💡 **تلميح:** يبدأ بحرف ( {answer_text[0]} )"
+        return f"💡 **تلميح:** يبدأ بـ ( {answer_text[:2]} ) وينتهي بـ ( {answer_text[-1]} )"
     else:
-        prompt = f"أعطني تلميحاً ذكياً وقصيراً جداً عن ({answer_text}) دون ذكر أي كلمة من الإجابة."
+        # محاولة استخدام Gemini للتلميح إذا كانت الإجابة أكثر من كلمة
         try:
+            prompt = f"أعطني تلميحاً ذكياً وقصيراً جداً عن ({answer_text}) دون ذكر أي كلمة من الإجابة."
             ai_hint = await call_gemini_ai(prompt) 
-            return f"💡 تلميح ذكي: {ai_hint}"
+            return f"💡 **تلميح ذكي:** {ai_hint}"
         except:
-            return f"💡 {len(words)} كلمات، تبدأ بـ ( {answer_text[:2]} )"
+            return f"💡 **تلميح:** {len(words)} كلمات، تبدأ بـ ( {answer_text[:2]} )"
 
 async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
+    """تنسيق رسالة السؤال بشكل ملكي يليق بياسر"""
     text = (
         f"🎓 **الـمنـظـم:** {settings['owner_name']} ☁️☁️\n"
         f"┏━━━━━━━━━━━━━━┓\n"
@@ -1109,7 +1104,7 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
         f"❓ **السؤال:**\n**{q_data['question_text']}**"
     )
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
-
+    
 # ==========================================
 # 3. محرك تشغيل المسابقة (المطور بتصاميم ياسر الملكية)
 # ==========================================
