@@ -1069,105 +1069,85 @@ active_quizzes = {}
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # 1. فحص نوع المسابقة (هل هي أسئلة بوت رسمية؟)
-        is_bot = quiz_data.get('is_bot_quiz', False)
+        # 1. جلب البيانات الأساسية
         raw_cats = quiz_data.get('cats', [])
-
+        is_bot = quiz_data.get('is_bot_quiz', False)
+        
+        # 2. معالجة "مسار أسئلة البوت" (الجزء المعطل عندك)
         if is_bot:
-            # --- [ مسار أسئلة البوت ] ---
             names_str = "، ".join(raw_cats)
-            # جلب الأسئلة من جدول bot_questions (البحث بالاسم مباشرة)
+            # جلب من جدول bot_questions والبحث بالاسم (category)
             res = supabase.table("bot_questions").select("*").in_("category", raw_cats).execute()
             questions = res.data
         else:
-            # --- [ مسار مسابقات الأعضاء/الخاصة ] ---
+            # 3. معالجة "مسار المسابقات الخاصة" (الشغال عندك)
             cat_ids = [int(c) for c in raw_cats if str(c).isdigit()]
             if not cat_ids:
-                await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
-                return
-
+                return await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
+            
             cat_info = supabase.table("categories").select("name").in_("id", cat_ids).execute()
             names_str = "، ".join([item['name'] for item in cat_info.data])
-
-            # جلب الأسئلة من جدول questions الأصلي
+            
             res = supabase.table("questions").select("*, categories(name)").in_("category_id", cat_ids).execute()
             questions = res.data
 
+        # 4. التأكد من وجود الأسئلة قبل الانطلاق
         if not questions:
-            await bot.send_message(chat_id, "⚠️ لم أجد أسئلة كافية في هذه الأقسام حالياً.")
-            return
+            return await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة في أقسام: {names_str}")
 
-        # 2. تحديد العدد المطلوب وخلطهم
+        # 5. خلط الأسئلة واختيار العدد المطلوب
         random.shuffle(questions)
         questions = questions[:int(quiz_data.get('questions_count', 10))]
 
-        # 3. إعلان انطلاق المنافسة
-        await bot.send_message(chat_id, f"🎯 <b>استعدوا للمنافسة!</b>\n📂 الأقسام: {names_str}\n🔢 الأسئلة: {len(questions)}")
-        await asyncio.sleep(3)
+        # 6. رسالة البداية الملكية
+        await bot.send_message(chat_id, f"🚀 **استعدوا للانطلاق!**\n📂 الأقسام: {names_str}\n🔢 العدد: {len(questions)} سؤال")
+        await asyncio.sleep(2)
 
+        # 7. حلقة الأسئلة (بدون تغيير في منطقك الشغال)
         overall_scores = {}
-
-        # 4. حلقة تشغيل الأسئلة (Loop)
         for i, q in enumerate(questions):
-            # توحيد جلب البيانات (يدعم الجدولين بذكاء)
+            # توحيد جلب البيانات (عشان مسميات الأعمدة في جدول البوت)
             q_text = q.get('question') or q.get('question_content') or 'نص مفقود'
             cat_name = q.get('category') or q.get('categories', {}).get('name', 'عام')
             ans = q.get('answer') or q.get('correct_answer') or q.get('answer_text') or ""
 
             active_quizzes[chat_id] = {
-                "active": True, 
-                "ans": str(ans).strip(), 
-                "winners": [], 
-                "mode": quiz_data['mode'],
-                "hint_sent": False
+                "active": True, "ans": str(ans).strip(), "winners": [], 
+                "mode": quiz_data.get('mode', 'السرعة ⚡'), "hint_sent": False
             }
             
-            # إرسال السؤال بتصميمك الملكي
             settings = {'owner_name': owner_name, 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit'], 'cat_name': cat_name}
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
             start_time = time.time()
-            time_limit = int(quiz_data['time_limit'])
+            time_limit = int(quiz_data.get('time_limit', 15))
             
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
-                
-                # --- [منطق التلميح الطائر: 5 ثوانٍ لضمان القراءة] ---
+                # منطق التلميح الطائر حقك (شغال)
                 if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                     if (time.time() - start_time) >= (time_limit / 2):
                         hint_text = await generate_smart_hint(ans) 
                         hint_msg = await bot.send_message(chat_id, f"💡 <b>تلميح:</b> {hint_text}", parse_mode="HTML")
                         active_quizzes[chat_id]['hint_sent'] = True
-                        
-                        async def fly_and_delete(msg):
-                            await asyncio.sleep(5) 
-                            try: await msg.delete()
-                            except: pass
-                        asyncio.create_task(fly_and_delete(hint_msg))
+                        asyncio.create_task(asyncio.sleep(5)).add_done_callback(lambda _: asyncio.create_task(hint_msg.delete()))
 
-                # نظام السرعة ⚡: لو أحد جاوب نكسر الوقت فوراً
                 if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
                     break
 
-            # --- نهاية السؤال: معالجة النتائج وتحديث النقاط ---
             active_quizzes[chat_id]['active'] = False
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
 
-            # استدعاء تصميم ياسر الإبداعي لعرض النتيجة
             await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
             await asyncio.sleep(2)
 
-        # --- ختام المسابقة: استدعاء تصميم ياسر النهائي للترتيب العام ---
         await send_final_results(chat_id, overall_scores, len(questions))
-        
-        # تنظيف الذاكرة بعد الانتهاء
-        if chat_id in active_quizzes:
-            del active_quizzes[chat_id]
 
     except Exception as e:
+        import logging
         logging.error(f"Engine Error: {e}")
-        await bot.send_message(chat_id, f"❌ حدث خطأ في محرك المسابقة: {e}")
+        await bot.send_message(chat_id, f"❌ حدث خطأ في المحرك: {e}")
         
 # ==========================================
 # 4. رصد الإجابات (النسخة الصامتة المعتمدة - ياسر)
