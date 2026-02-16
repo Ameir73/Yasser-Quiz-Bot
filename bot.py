@@ -1115,6 +1115,18 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
 # ==========================================
 active_quizzes = {}
 
+# دالة تنظيف النص لضمان قبول الإجابة (تجنب مشاكل الهمزات والتاء المربوطة)
+def clean_text(text):
+    if not text: return ""
+    text = str(text).strip().lower()
+    replacements = {
+        'أ': 'ا', 'إ': 'ا', 'آ': 'ا',
+        'ة': 'ه', 'ى': 'ي', 'ئ': 'ي', 'ؤ': 'و'
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
         # 1. تحديد الأقسام
@@ -1123,71 +1135,74 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
             return
 
-        # جلب أسماء الأقسام للعرض فقط
         cat_info = supabase.table("categories").select("name").in_("id", cat_ids).execute()
         cat_names_list = [item['name'] for item in cat_info.data]
         names_str = "، ".join(cat_names_list)
 
         # 2. جلب الأسئلة بنظام "مانع التكرار" (RPC)
-        # ملاحظة: سنمرر قسماً واحداً أو نعدل الدالة لتشمل مصفوفة، لكن حالياً لنمشي على قسم واحد أساسي
         questions = []
-        target_count = int(quiz_data['questions_count'])
+        target_count = int(quiz_data.get('questions_count', 10))
         
-        # نجلب الأسئلة من الأقسام المختارة
+        # توزيع الجلب على الأقسام لضمان التنوع
+        per_cat_limit = max(1, target_count // len(cat_names_list)) + 2
+
         for c_name in cat_names_list:
             if len(questions) >= target_count: break
-            
-            # استدعاء الدالة الذكية اللي رفعناها بالـ SQL
             res = supabase.rpc("get_unplayed_question", {
                 "p_chat_id": str(chat_id),
                 "p_category": c_name
             }).execute()
             
             if res.data:
-                questions.extend(res.data)
+                questions.extend(res.data[:per_cat_limit])
 
         if not questions:
             await bot.send_message(chat_id, "⚠️ كفو! لقد ختمتم جميع الأسئلة المتوفرة في هذه الأقسام.")
             return
 
-        # تحديد عدد الأسئلة المطلوب فقط
+        # التصفية النهائية واللخبطة
+        random.shuffle(questions)
         questions = questions[:target_count]
 
         await bot.send_message(chat_id, f"🎯 <b>استعدوا للمنافسة!</b>\n📂 الأقسام: {names_str}\n🔢 الأسئلة الجديدة: {len(questions)}")
         await asyncio.sleep(3)
 
-        random.shuffle(questions)
         overall_scores = {}
 
         for i, q in enumerate(questions):
-            # نعدل المسميات لتطابق جدول bot_questions الجديد
-            q_text = q.get('question', 'نص مفقود')
+            q_text = q.get('question') or q.get('question_text') or 'نص مفقود'
             cat_name = q.get('category', 'عام')
-            ans = q.get('answer', "")
-            q_id = q.get('id') # مهم جداً لمانع التكرار
+            ans = str(q.get('answer')).strip()
+            q_id = q.get('id')
 
             active_quizzes[chat_id] = {
                 "active": True, 
-                "ans": str(ans).strip(), 
+                "ans": ans, 
                 "winners": [], 
                 "mode": quiz_data['mode'],
                 "hint_sent": False,
-                "current_q_id": q_id # نخزنه عشان نسجله كـ "تم حله"
+                "current_q_id": q_id
             }
             
             settings = {'owner_name': owner_name, 'mode': quiz_data['mode'], 'time_limit': quiz_data['time_limit'], 'cat_name': cat_name}
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
-            # ... (منطق الوقت والتلميح كما هو بدون تغيير) ...
+            # --- منطق الوقت والتلميح ---
             start_time = time.time()
             time_limit = int(quiz_data['time_limit'])
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
-                if quiz_data['mode'] == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
+                
+                # إرسال تلميح في منتصف الوقت
+                if (time.time() - start_time > time_limit / 2) and not active_quizzes[chat_id]['hint_sent']:
+                    hint = await generate_smart_hint(ans)
+                    await bot.send_message(chat_id, hint)
+                    active_quizzes[chat_id]['hint_sent'] = True
+
+                if not active_quizzes[chat_id]['active']:
                     break
 
             # --- [تحديث مانع التكرار] ---
-            # بمجرد انتهاء السؤال، نسجله في جدول played_questions عشان ما يطلع مرة ثانية لهذا القروب
             try:
                 supabase.table("played_questions").insert({
                     "chat_id": str(chat_id),
@@ -1203,9 +1218,32 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             await asyncio.sleep(2)
 
         await send_final_results(chat_id, overall_scores, len(questions))
+        if chat_id in active_quizzes: del active_quizzes[chat_id]
         
     except Exception as e:
         logging.error(f"Engine Error: {e}")
+
+# ==========================================
+# 🎯 مستمع الإجابات (يجب وضعه هنا ليعمل فوراً)
+# ==========================================
+@dp.message_handler(lambda m: m.chat.id in active_quizzes and active_quizzes[m.chat.id]['active'])
+async def handle_quiz_responses(message: types.Message):
+    chat_id = message.chat.id
+    quiz = active_quizzes[chat_id]
+    
+    # مقارنة الإجابات المنظفة
+    if clean_text(message.text) == clean_text(quiz['ans']):
+        user_id = message.from_user.id
+        user_name = message.from_user.first_name
+        
+        if not any(w['id'] == user_id for w in quiz['winners']):
+            quiz['winners'].append({"id": user_id, "name": user_name})
+            await message.reply(f"⭐ كفو يا {user_name}! إجابة صحيحة")
+            
+            if quiz['mode'] == 'السرعة ⚡':
+                quiz['active'] = False
+
+
 # ==========================================
 # 4. رصد الإجابات (النسخة الصامتة المعتمدة - ياسر)
 # ==========================================
