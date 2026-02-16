@@ -1073,14 +1073,14 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         raw_cats = quiz_data.get('cats', [])
         is_bot = quiz_data.get('is_bot_quiz', False)
         
-        # 2. معالجة [ مسار أسئلة البوت ] - (الذي يحتوي سؤال، إجابة، قسم فقط)
+        # 2. معالجة [ مسار أسئلة البوت ] - (الآن مضبوط 100% مع مسمياتك)
         if is_bot:
             names_str = "، ".join(raw_cats)
-            # جلب الأسئلة من جدول bot_questions والبحث في عمود "القسم" (اسم القسم مباشرة)
+            # الجلب باستخدام الأسماء الإنجليزية كما في جدولك
             res = supabase.table("bot_questions").select("*").in_("category", raw_cats).execute()
             questions = res.data
         else:
-            # 3. معالجة [ مسار المسابقات الخاصة ] - (النظام القديم الشغال بـ IDs)
+            # 3. معالجة [ مسار المسابقات الخاصة ] - (شغال تمام)
             cat_ids = [int(c) for c in raw_cats if str(c).isdigit()]
             if not cat_ids:
                 return await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
@@ -1099,17 +1099,21 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         random.shuffle(questions)
         questions = questions[:int(quiz_data.get('questions_count', 10))]
 
-        # 6. رسالة انطلاق ياسر الملكية
+        # 6. رسالة الانطلاق
         await bot.send_message(chat_id, f"🚀 **انطلقنا الآن!**\n📂 الأقسام: {names_str}\n🔢 العدد: {len(questions)} سؤال")
         await asyncio.sleep(2)
 
-        # 7. حلقة الأسئلة (تشغيل المسابقة)
         overall_scores = {}
         for i, q in enumerate(questions):
-            # توحيد جلب البيانات بذكاء ليتناسب مع الجدولين
-            q_text = q.get('question') or q.get('question_content') or 'نص مفقود'
-            cat_name = q.get('category') or q.get('categories', {}).get('name', 'عام')
-            ans = q.get('answer') or q.get('correct_answer') or q.get('answer_text') or ""
+            # 🎯 التعديل السحري هنا: قراءة المسميات الإنجليزية مباشرة
+            if is_bot:
+                q_text = q.get('question', 'نص مفقود')
+                cat_name = q.get('category', 'عام')
+                ans = q.get('answer', "")
+            else:
+                q_text = q.get('question_content', 'نص مفقود')
+                cat_name = q.get('categories', {}).get('name', 'عام')
+                ans = q.get('correct_answer') or q.get('answer_text') or ""
 
             active_quizzes[chat_id] = {
                 "active": True, "ans": str(ans).strip(), "winners": [], 
@@ -1150,7 +1154,8 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         import logging
         logging.error(f"Engine Error: {e}")
         await bot.send_message(chat_id, f"❌ حدث خطأ في المحرك: {e}")
-        
+                
+
 # ==========================================
 # 4. رصد الإجابات (النسخة الصامتة المعتمدة - ياسر)
 # ==========================================
