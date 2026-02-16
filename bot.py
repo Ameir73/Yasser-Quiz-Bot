@@ -1063,58 +1063,51 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
 # ==========================================
-# 3. محرك تشغيل المسابقة (المطور - نسخة كشف الأخطاء الاحترافية)
+# 3. محرك تشغيل المسابقة (المطور - نسخة منع الخلط الصارمة)
 # ==========================================
 active_quizzes = {}
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # 1. استخراج المتغيرات الأساسية من الـ Payload
+        # 1. استخراج المتغيرات الأساسية
         quiz_title = quiz_data.get('quiz_name') or quiz_data.get('name') or "مسابقة"
-        # التحقق من نوع المسابقة (أسئلة بوت أو أعضاء)
+        # التحقق الصارم من نوع المسابقة
         is_bot = quiz_data.get('is_bot_quiz', False) or quiz_data.get('source') == 'bot'
-        table_name = "bot_questions" if is_bot else "questions"
-        
-        # جلب مصفوفة الأقسام والعدد المطلوب
-        selected_cats = quiz_data.get('cats', [])
         q_count = int(quiz_data.get('questions_count', 10))
-        
-        # --- [ نظام كشف الأخطاء للمطور ياسر ] ---
-        logging.info(f"🔍 محاولة تشغيل: {quiz_title} | الجدول: {table_name}")
-        # ---------------------------------------
+        selected_cats = quiz_data.get('cats', [])
 
         questions = []
         try:
             if is_bot:
-                # محاولة جلب أسئلة البوت (تجاهل تصفية الأقسام النصية لضمان التشغيل)
-                res = supabase.table(table_name).select("*").limit(q_count).execute()
-                questions = res.data
-            else:
-                # جلب الأسئلة الخاصة بناءً على الـ ID للأقسام
-                cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
-                if cat_ids:
-                    res = supabase.table(table_name).select("*").in_("category_id", cat_ids).limit(q_count).execute()
-                else:
-                    # إذا كانت المصفوفة فارغة، جلب عشوائي لعدم توقف البوت
-                    res = supabase.table(table_name).select("*").limit(q_count).execute()
+                # --- مسار أسئلة البوت فقط (ممنوع الاقتراب من جدول الأعضاء) ---
+                # البحث بالاسم النصي للقسم في جدول bot_questions
+                res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
                 questions = res.data
                 
+                # إذا لم يجد القسم المحدد، يسحب عشوائياً من نفس جدول البوت فقط
+                if not questions:
+                    res = supabase.table("bot_questions").select("*").limit(q_count).execute()
+                    questions = res.data
+            else:
+                # --- مسار أسئلة الأعضاء فقط (ممنوع الاقتراب من جدول البوت) ---
+                cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
+                if cat_ids:
+                    res = supabase.table("questions").select("*").in_("category_id", cat_ids).limit(q_count).execute()
+                    questions = res.data
+                else:
+                    # طوارئ جدول الأعضاء: يسحب من جدول الأعضاء فقط
+                    res = supabase.table("questions").select("*").limit(q_count).execute()
+                    questions = res.data
+                    
         except Exception as db_err:
-            error_msg = f"❌ **خطأ في استعلام قاعدة البيانات:**\n`{str(db_err)}`"
-            await bot.send_message(chat_id, error_msg, parse_mode="Markdown")
+            logging.error(f"Database Fetch Error: {db_err}")
+            await bot.send_message(chat_id, f"❌ **خطأ في استعلام المصدر:**\n`{str(db_err)}`", parse_mode="Markdown")
             return
 
-        # 2. فحص النتيجة وإرسال تقرير الخطأ إذا فشل الجلب
+        # 2. فحص النتيجة (منع القفز التلقائي لجدول آخر)
         if not questions:
-            debug_report = (
-                f"⚠️ **فشل العثور على أسئلة!**\n\n"
-                f"📝 الاسم: `{quiz_title}`\n"
-                f"🤖 نظام بوت: `{is_bot}`\n"
-                f"📊 الجدول المستهدف: `{table_name}`\n"
-                f"📂 الأقسام (Cats): `{selected_cats}`\n"
-                f"💡 **نصيحة:** تأكد أن جدول `{table_name}` يحتوي على بيانات فعلاً."
-            )
-            await bot.send_message(chat_id, debug_report, parse_mode="Markdown")
+            source_txt = "البوت 🤖" if is_bot else "الأعضاء 👤"
+            await bot.send_message(chat_id, f"⚠️ **فشل العثور على أسئلة!**\nالمصدر: `{source_txt}`\nتأكد من وجود بيانات في القسم المختار.")
             return
 
         # رسالة الانطلاق (تصميم ياسر الملكي)
@@ -1127,7 +1120,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
         # 3. دورة الأسئلة
         for i, q in enumerate(questions):
-            # مرونة في قراءة الأعمدة (question_content أو question)
+            # مرونة قراءة الأعمدة لضمان التوافق مع الجدولين
             q_text = q.get('question_content') or q.get('question') or q.get('text')
             ans = q.get('correct_answer') or q.get('answer')
             cat_name = q.get('category') or q.get('category_name') or "عام"
@@ -1155,7 +1148,6 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
                 
-                # التلميح الذكي
                 if quiz_data.get('hint_enabled') and not active_quizzes[chat_id]['hint_sent']:
                     if (time.time() - start_time) >= (time_limit / 2):
                         hint_text = "".join([c if random.random() > 0.6 or c == " " else "." for c in str(ans)])
