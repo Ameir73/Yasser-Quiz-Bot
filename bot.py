@@ -1074,8 +1074,7 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     )
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
-# --- 1. تعريف المخزن المؤقت في أعلى الملف ---
-active_quizzes = {}
+# --- 1. تعريف المخزن المؤقت في المحرك 
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
@@ -1141,6 +1140,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             return
 
         # --- [ انطلاق المسابقة ] ---
+        #--- احبك ---
         random.shuffle(questions)
         await bot.send_message(chat_id, f"🎯 **انطلقت الآن: {quiz_title}**\n📂 المصدر: {source_label}\n🔢 الأسئلة: {len(questions)}")
         await asyncio.sleep(2)
@@ -1305,15 +1305,13 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
     elif action == "main":
         kb = InlineKeyboardMarkup(row_width=2)
         kb.add(
-            # زر الرفع الجماعي المطور
             InlineKeyboardButton("📥 رفع أسئلة (Bulk)", callback_data="botq_upload"),
-            # زر عرض الأقسام من الجدول الجديد
             InlineKeyboardButton("🗂️ عرض الأقسام", callback_data="botq_viewcats"),
             InlineKeyboardButton("⬅️ عودة للرئيسية", callback_data="admin_back")
         )
         await c.message.edit_text("🛠️ <b>إدارة الأسئلة (الموحدة)</b>\nاختر الإجراء المطلوب:", reply_markup=kb, parse_mode="HTML")
 
-        elif action == "upload":
+    elif action == "upload":
         await c.message.edit_text(
             "📥 <b>وضع الرفع الجماعي نشط:</b>\n\n"
             "يرجى إرسال الأسئلة بالصيغة التالية:\n"
@@ -1324,7 +1322,6 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
         await state.set_state("wait_for_bulk_questions")
 
     elif action == "viewcats":
-        # جلب الأقسام من الجدول [cite: 2026-02-17]
         res = supabase.table("bot_categories").select("*").execute()
         if not res.data:
             return await c.answer("⚠️ لا توجد أقسام مسجلة.", show_alert=True)
@@ -1337,16 +1334,11 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
             kb.insert(InlineKeyboardButton(f"📁 {cat['name']}", callback_data=f"botq_mng_{i}"))
         
         kb.add(InlineKeyboardButton("⬅️ عودة", callback_data="botq_main"))
-        try:
-            await c.message.edit_text("🗂️ <b>أقسام أسئلة البوت الرسمية:</b>", reply_markup=kb, parse_mode="HTML")
-        except: pass # حل مشكلة Message is not modified [cite: 2026-01-01]
-            
-    # ... بقية دوال الحذف (del, fndel) تظل كما هي مع مراعاة استخدام category_id في الحذف ...
-    await c.answer()
-
+        await c.message.edit_text("🗂️ <b>أقسام أسئلة البوت الرسمية:</b>", reply_markup=kb, parse_mode="HTML")
+        
 # --- معالج الرفع الجماعي النهائي (ياسر الملك) ---
 @dp.message_handler(state="wait_for_bulk_questions", user_id=ADMIN_ID)
-async def process_bulk_questions(message: types.Message, state: FSMContext):
+async def pocess_bulk_questions(message: types.Message, state: FSMContext):
     # خيارات الخروج من الحالة
     if message.text.lower() in ["خروج", "إلغاء", "back", "exit"]:
         await state.finish()
