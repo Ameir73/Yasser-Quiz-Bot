@@ -1071,11 +1071,11 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
         f"❓ **السؤال:**\n**{q_data['question_text']}**"
     )
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
-    
-# --- 1. تعريف المخزن المؤقت (ضعه في أعلى الملف لضمان عدم ظهور error) ---
+
+# --- 1. تعريف المخزن المؤقت في أعلى الملف ---
 active_quizzes = {}
 
-# --- 2. المحرك المطور والشامل (ياسر الملك - النسخة المستقرة) ---
+# --- 2. المحرك المطور مع كاشف الأخطاء الملكي 🔎 ---
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
         # استخراج الإعدادات
@@ -1085,28 +1085,43 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         is_bot = quiz_data.get('is_bot_quiz', False)
 
         questions = []
-        source_label = "أقسام الأعضاء 👤" # افتراضي
+        source_label = "أقسام الأعضاء 👤" 
 
         try:
             if is_bot:
                 source_label = "أسئلة البوت 🤖"
-                # محاولة الجلب بكل الطرق (ID أو نص) لضمان عدم ظهور "المصدر فارغ"
+                
+                # --- [ بداية التحقيق الملكي 🔎 ] ---
+                print("\n" + "═"*40)
+                print(f"🚀 بدء فحص جلب أسئلة البوت...")
+                print(f"📍 الأقسام المختارة من اليوزر: {selected_cats}")
+
+                # تحويل المعرفات لأرقام صحيحة لضمان مطابقة الـ ID
                 cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
+                print(f"🔢 المعرفات بعد التحويل لـ (Integer): {cat_ids}")
                 
-                # جلب بالـ ID
+                # 1. محاولة الجلب بالـ ID (المسار الرئيسي)
                 res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).limit(q_count).execute()
+                print(f"📊 نتيجة البحث بالـ ID: تم العثور على {len(res.data) if res.data else 0} سؤال")
                 
-                # إذا لم يجد، يجرب بالاسم النصي
+                # 2. إذا فشل، نجرب بالاسم النصي
                 if not res.data:
+                    print("⚠️ فشل الجلب بالـ ID، نحاول البحث بالأسماء النصية...")
                     res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
+                    print(f"📊 نتيجة البحث بالنص: تم العثور على {len(res.data) if res.data else 0} سؤال")
                 
-                # إذا لا زال فارغاً، يسحب أي أسئلة بوت (خطة طوارئ)
+                # 3. خطة الطوارئ (سيتم طباعتها لتعرف أنها اشتغلت)
                 if not res.data:
+                    print("🚨 الخلل: لم أجد أي تطابق! سيتم سحب عينات عشوائية من جدول البوت للفحص...")
                     res = supabase.table("bot_questions").select("*").limit(q_count).execute()
+                    print(f"📊 نتيجة سحب الطوارئ: تم جلب {len(res.data) if res.data else 0} سؤال")
+                
+                print("═"*40 + "\n")
+                # --- [ نهاية التحقيق ] ---
                 
                 questions = res.data
             else:
-                # مسار الأعضاء (تحويل لـ IDs رقمية)
+                # مسار الأعضاء
                 cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
                 if cat_ids:
                     res = supabase.table("questions").select("*").in_("category_id", cat_ids).limit(q_count).execute()
@@ -1116,7 +1131,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                     questions = res.data
 
         except Exception as e:
-            logging.error(f"Fetch Error: {e}")
+            print(f"❌ خطأ تقني أثناء مخاطبة سوبابيز: {e}")
             await bot.send_message(chat_id, "❌ حدث خطأ أثناء جلب الأسئلة.")
             return
 
@@ -1132,14 +1147,13 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         overall_scores = {}
 
         for i, q in enumerate(questions):
-            # توحيد قراءة البيانات لضمان عدم التعثر
+            # توحيد قراءة البيانات
             q_text = q.get('question_content') or q.get('question') or q.get('text')
             ans = q.get('correct_answer') or q.get('answer')
             cat_name = q.get('category') or "عام"
             
             if not q_text: continue 
 
-            # تحديث حالة المسابقة في القاموس العالمي
             active_quizzes[chat_id] = {
                 "active": True, 
                 "ans": str(ans).strip(), 
@@ -1157,16 +1171,14 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
-            # دورة الوقت (انتظار الإجابة)
             start_time = time.time()
             time_limit = settings['time_limit']
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.5)
-                if not active_quizzes[chat_id]['active']: break # توقف عند الإجابة الصحيحة
+                if not active_quizzes[chat_id]['active']: break 
 
             active_quizzes[chat_id]['active'] = False
             
-            # توزيع النقاط (أضف دوال النتائج الخاصة بك هنا)
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
             
@@ -1176,34 +1188,26 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         await send_final_results(chat_id, overall_scores, len(questions))
         
     except Exception as e:
-        logging.error(f"Engine Error: {e}")
+        print(f"❌ عطل في المحرك: {e}")
         await bot.send_message(chat_id, f"⚠️ تعثر المحرك الملكي: {e}")
         
 @dp.message_handler(lambda m: not m.text.startswith('/'))
 async def check_ans(m: types.Message):
     cid = m.chat.id
-    # التأكد أن هناك مسابقة قائمة والسؤال ما زال متاحاً للإجابة
     if cid in active_quizzes and active_quizzes[cid]['active']:
-        
-        # تنظيف الإجابة من الفراغات وتحويلها لصغير لضمان المطابقة
         user_ans = m.text.strip().lower()
         correct_ans = active_quizzes[cid]['ans'].strip().lower()
         
         if user_ans == correct_ans:
-            # التحقق: إذا لم يكن هذا الشخص قد أجاب صح من قبل في نفس السؤال
             already_won = any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners'])
-            
             if not already_won:
-                # إضافة المتسابق للقائمة (الاسم الأول + الـ ID)
                 active_quizzes[cid]['winners'].append({
                     "name": m.from_user.first_name, 
                     "id": m.from_user.id
                 })
-                
-                # --- حالة خاصة بنظام السرعة ---
                 if active_quizzes[cid]['mode'] == 'السرعة ⚡':
                     active_quizzes[cid]['active'] = False
-                    # في نظام السرعة، السؤال ينتهي فوراً عند أول إجابة صحيحة
+                    
     
 # ==========================================
 # 👑 لوحة تحكم المطور (ياسر) - الإدارة الشاملة
