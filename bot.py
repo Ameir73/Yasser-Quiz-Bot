@@ -1072,37 +1072,38 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     )
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
     
-
 # ==========================================
-# 3. محرك تشغيل المسابقة (المطور - الربط الكامل)
+# 3. محرك تشغيل المسابقة (المطور - إصلاح تسمية المصدر)
 # ==========================================
-active_quizzes = {}
-
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # 1. العد التنازلي (استدعاء الدالة الناقصة) [cite: 2026-02-17]
-        setup_msg = await bot.send_message(chat_id, "🚀 **جاري تجهيز المسابقة...**")
-        await countdown_timer(setup_msg, seconds=3) # هنا تم الربط
-        await setup_msg.delete()
-
         quiz_title = quiz_data.get('quiz_name') or "مسابقة ملكية"
         selected_cats = quiz_data.get('cats', [])
         q_count = int(quiz_data.get('questions_count', 10))
+        
+        # --- [ إصلاح منطق تحديد المصدر ] ---
+        # إذا كانت المسابقة تأتي من قائمة "أقسام البوت" أو الأقسام نصية وليست أرقاماً
         is_bot = quiz_data.get('is_bot_quiz', False)
+        
+        # فحص إضافي للأمان: إذا كانت الأقسام المختارة نصية (مثل: ألغاز) فهي بوت حتماً
+        if selected_cats and isinstance(selected_cats[0], str) and not selected_cats[0].isdigit():
+            is_bot = True
+        # ---------------------------------------
 
-        # 2. جلب الأسئلة (تصحيح الجلب بالـ ID والاسم) [cite: 2026-01-01, 2026-02-17]
         questions = []
         try:
             if is_bot:
-                # محاولة الجلب بالـ ID أولاً لضمان الدقة
-                res = supabase.table("bot_questions").select("*").in_("bot_category_id", selected_cats).limit(q_count).execute()
-                if not res.data: # محاولة ثانية بالاسم إذا فشل الـ ID
-                    res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
+                # مسار البوت
+                res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
+                if not res.data: # تجربة الـ ID إذا فشل النص
+                    res = supabase.table("bot_questions").select("*").in_("bot_category_id", selected_cats).limit(q_count).execute()
                 questions = res.data
+                source_label = "أسئلة البوت 🤖"
             else:
-                # مسار الأعضاء (استخدام category_id الرقمي)
+                # مسار الأعضاء
                 res = supabase.table("questions").select("*").in_("category_id", selected_cats).limit(q_count).execute()
                 questions = res.data
+                source_label = "أقسام الأعضاء 👤"
         except Exception as e:
             logging.error(f"Fetch Error: {e}")
             await bot.send_message(chat_id, "❌ فشل جلب الأسئلة.. تأكد من الأقسام.")
@@ -1113,9 +1114,12 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             return
 
         random.shuffle(questions)
-        source_label = "أسئلة البوت 🤖" if is_bot else "أقسام الأعضاء 👤"
+        
+        # الآن سيظهر المصدر الصحيح بناءً على النجاح في الجلب
         await bot.send_message(chat_id, f"🎯 **انطلقت: {quiz_title}**\n📂 المصدر: {source_label}\n🔢 الأسئلة: {len(questions)}")
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
+
+        # ... تكملة المحرك
 
         overall_scores = {}
 
