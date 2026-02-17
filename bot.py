@@ -1112,14 +1112,17 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             await bot.send_message(chat_id, "⚠️ لم يتم العثور على أسئلة في المصدر المختار.")
             return
 
-        # تحديث رسالة الانطلاق لتعكس المصدر الصحيح
+                # تحديث رسالة الانطلاق لتعكس المصدر الصحيح
         source_label = "أسئلة البوت 🤖" if is_bot else "أقسام الأعضاء 👤"
         start_msg = f"🎯 <b>انطلقت الآن: {quiz_title}</b>\n📂 المصدر: {source_label}\n🔢 الأسئلة: {len(questions)}"
-        await bot.send_message(chat_id, start_msg, parse_mode="HTML"
+        
+        # السطر الذي كان فيه الخطأ (تم إغلاق القوس)
+        await bot.send_message(chat_id, start_msg, parse_mode="HTML")
         await asyncio.sleep(2)
 
         random.shuffle(questions)
         overall_scores = {}
+        
 
         # 3. دورة الأسئلة
         for i, q in enumerate(questions):
