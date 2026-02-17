@@ -1313,7 +1313,7 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
         )
         await c.message.edit_text("🛠️ <b>إدارة الأسئلة (الموحدة)</b>\nاختر الإجراء المطلوب:", reply_markup=kb, parse_mode="HTML")
 
-    elif action == "upload":
+        elif action == "upload":
         await c.message.edit_text(
             "📥 <b>وضع الرفع الجماعي نشط:</b>\n\n"
             "يرجى إرسال الأسئلة بالصيغة التالية:\n"
@@ -1323,52 +1323,23 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
         )
         await state.set_state("wait_for_bulk_questions")
 
-        elif action == "viewcats":
-        # 1. جلب الأقسام من الجدول الرسمي [cite: 2026-02-17]
+    elif action == "viewcats":
+        # جلب الأقسام من الجدول [cite: 2026-02-17]
         res = supabase.table("bot_categories").select("*").execute()
         if not res.data:
-            return await c.answer("⚠️ لا توجد أقسام مسجلة في جدول البوت حالياً.", show_alert=True)
+            return await c.answer("⚠️ لا توجد أقسام مسجلة.", show_alert=True)
             
         categories = res.data
         await state.update_data(current_categories=categories)
         
         kb = InlineKeyboardMarkup(row_width=2)
         for i, cat in enumerate(categories):
-            # سنستخدم 'name' للعرض و 'id' مخفي في الـ callback [cite: 2026-01-01]
             kb.insert(InlineKeyboardButton(f"📁 {cat['name']}", callback_data=f"botq_mng_{i}"))
         
         kb.add(InlineKeyboardButton("⬅️ عودة", callback_data="botq_main"))
-        await c.message.edit_text("🗂️ <b>أقسام أسئلة البوت الرسمية:</b>", reply_markup=kb, parse_mode="HTML")
-
-    elif action == "mng":
-        idx = int(data_parts[2])
-        user_data = await state.get_data()
-        categories = user_data.get('current_categories', [])
-        
-        if idx < len(categories):
-            cat_info = categories[idx]
-            
-            # 2. الإصلاح الجوهري هنا: البحث بالعمود bot_category_id لضمان مطابقة جدول bot_questions [cite: 2026-02-17]
-            try:
-                res = supabase.table("bot_questions").select("id", count="exact").eq("bot_category_id", cat_info['id']).execute()
-                question_count = res.count if res.count is not None else 0
-            except:
-                # محاولة ثانية بـ category_id إذا كان اسم العمود مختلف [cite: 2026-01-01]
-                res = supabase.table("bot_questions").select("id", count="exact").eq("category_id", cat_info['id']).execute()
-                question_count = res.count if res.count is not None else 0
-
-            kb = InlineKeyboardMarkup(row_width=1)
-            kb.add(
-                InlineKeyboardButton("🗑️ حذف القسم بالكامل", callback_data=f"botq_del_{idx}"),
-                InlineKeyboardButton("⬅️ عودة", callback_data="botq_viewcats")
-            )
-            await c.message.edit_text(
-                f"📂 <b>القسم: {cat_info['name']}</b>\n"
-                f"🆔 المعرف: <code>{cat_info['id']}</code>\n"
-                f"📊 إجمالي الأسئلة: {question_count}", 
-                reply_markup=kb, 
-                parse_mode="HTML"
-            )
+        try:
+            await c.message.edit_text("🗂️ <b>أقسام أسئلة البوت الرسمية:</b>", reply_markup=kb, parse_mode="HTML")
+        except: pass # حل مشكلة Message is not modified [cite: 2026-01-01]
             
     # ... بقية دوال الحذف (del, fndel) تظل كما هي مع مراعاة استخدام category_id في الحذف ...
     await c.answer()
