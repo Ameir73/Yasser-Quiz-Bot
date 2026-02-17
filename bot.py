@@ -1369,7 +1369,7 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
     # ... بقية دوال الحذف (del, fndel) تظل كما هي مع مراعاة استخدام category_id في الحذف ...
     await c.answer()
 
-# --- معالج الرفع الجماعي المطور (الخطوة الثانية: الربط بالـ ID الحقيقي) ---
+# --- معالج الرفع الجماعي (النسخة المتوافقة مع المخطط الهندسي) ---
 @dp.message_handler(state="wait_for_bulk_questions", user_id=ADMIN_ID)
 async def process_bulk_questions(message: types.Message, state: FSMContext):
     if message.text.lower() in ["خروج", "إلغاء", "back", "exit"]:
@@ -1385,7 +1385,7 @@ async def process_bulk_questions(message: types.Message, state: FSMContext):
             if len(parts) == 3:
                 q_text, q_ans, cat_name = parts[0].strip(), parts[1].strip(), parts[2].strip()
                 try:
-                    # 1. فحص هل القسم موجود في bot_categories أو إنشاؤه [cite: 2026-01-01]
+                    # 1. فحص القسم في جدول bot_categories [cite: 2026-01-01]
                     cat_res = supabase.table("bot_categories").select("id").eq("name", cat_name).execute()
                     if cat_res.data:
                         cat_id = cat_res.data[0]['id']
@@ -1393,25 +1393,21 @@ async def process_bulk_questions(message: types.Message, state: FSMContext):
                         new_cat = supabase.table("bot_categories").insert({"name": cat_name}).execute()
                         cat_id = new_cat.data[0]['id']
 
-                    # 2. إدخال السؤال في جدول bot_questions مع الربط بالـ category_id [cite: 2026-01-01]
-                    # ملاحظة: تم حذف عمود "category" النصي لعدم وجوده في قاعدة بياناتك [cite: 2026-01-01]
+                    # 2. الإدخال باستخدام الاسم الصحيح للعمود bot_category_id [cite: 2026-02-17]
                     supabase.table("bot_questions").insert({
                         "question_content": q_text,
                         "correct_answer": q_ans,
-                        "category_id": cat_id  # الربط البرمجي الصارم مع الجدول الجديد [cite: 2026-01-01]
+                        "bot_category_id": cat_id  # التعديل الذهبي هنا [cite: 2026-02-17]
                     }).execute()
                     success += 1
                 except Exception as e:
-                    logging.error(f"Upload Row Error: {e}")
-                    # إظهار رسالة خطأ للمطور ياسر في حال فشل سطر معين
-                    await message.answer(f"❌ خطأ في إدخال: {q_text[:20]}...\nالسبب: {str(e)}")
+                    logging.error(f"Upload Error: {e}")
                     error += 1
             else: error += 1
         else: error += 1
 
-    await message.answer(f"📊 <b>ملخص الرفع الذكي (ياسر الملك):</b>\n✅ نجاح: {success}\n❌ فشل: {error}\n\n📥 أرسل دفعة أخرى بالصيغة المعتادة أو أرسل 'خروج'.", parse_mode="HTML")
+    await message.answer(f"📊 <b>ملخص الرفع (المطابق للمخطط):</b>\n✅ نجاح: {success}\n❌ فشل: {error}\n\n📥 أرسل الدفعة التالية أو 'خروج'.", parse_mode="HTML")
     
-
 # ==========================================
 # 5. نهاية الملف: ضمان التشغيل 24/7 على Render
 # ==========================================
