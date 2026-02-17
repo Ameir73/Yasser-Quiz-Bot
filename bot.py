@@ -1052,79 +1052,96 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
 # ==========================================
-# 3. محرك تشغيل المسابقة (النسخة الصارمة لياسر الملك)
+# 3. محرك تشغيل المسابقة (المطور - الربط الكامل)
 # ==========================================
+active_quizzes = {}
+
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
+        # 1. العد التنازلي (استدعاء الدالة الناقصة) [cite: 2026-02-17]
+        setup_msg = await bot.send_message(chat_id, "🚀 **جاري تجهيز المسابقة...**")
+        await countdown_timer(setup_msg, seconds=3) # هنا تم الربط
+        await setup_msg.delete()
+
+        quiz_title = quiz_data.get('quiz_name') or "مسابقة ملكية"
         selected_cats = quiz_data.get('cats', [])
         q_count = int(quiz_data.get('questions_count', 10))
         is_bot = quiz_data.get('is_bot_quiz', False)
 
+        # 2. جلب الأسئلة (تصحيح الجلب بالـ ID والاسم) [cite: 2026-01-01, 2026-02-17]
         questions = []
         try:
             if is_bot:
-                # جلب الأسئلة من جدول البوت الرسمي bot_questions [cite: 2026-02-17]
-                # نستخدم اسم القسم (category) للفلترة كما تم حفظه في الرفع الجماعي
-                res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
+                # محاولة الجلب بالـ ID أولاً لضمان الدقة
+                res = supabase.table("bot_questions").select("*").in_("bot_category_id", selected_cats).limit(q_count).execute()
+                if not res.data: # محاولة ثانية بالاسم إذا فشل الـ ID
+                    res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
                 questions = res.data
             else:
-                # مسار الأعضاء: جدول questions القديم
+                # مسار الأعضاء (استخدام category_id الرقمي)
                 res = supabase.table("questions").select("*").in_("category_id", selected_cats).limit(q_count).execute()
                 questions = res.data
         except Exception as e:
             logging.error(f"Fetch Error: {e}")
-            await bot.send_message(chat_id, "❌ فشل جلب الأسئلة من المصدر.")
+            await bot.send_message(chat_id, "❌ فشل جلب الأسئلة.. تأكد من الأقسام.")
             return
 
         if not questions:
-            await bot.send_message(chat_id, "⚠️ لم يتم العثور على أسئلة في المصدر المختار.")
+            await bot.send_message(chat_id, "⚠️ المصدر المختار فارغ حالياً.")
             return
 
+        random.shuffle(questions)
         source_label = "أسئلة البوت 🤖" if is_bot else "أقسام الأعضاء 👤"
-        start_msg = f"🎯 <b>انطلقت الآن: {quiz_data.get('quiz_name', 'مسابقة')}</b>\n📂 المصدر: {source_label}\n🔢 الأسئلة: {len(questions)}"
-        await bot.send_message(chat_id, start_msg, parse_mode="HTML")
+        await bot.send_message(chat_id, f"🎯 **انطلقت: {quiz_title}**\n📂 المصدر: {source_label}\n🔢 الأسئلة: {len(questions)}")
         await asyncio.sleep(2)
 
-        random.shuffle(questions)
         overall_scores = {}
 
+        # 3. دورة الأسئلة الذكية
         for i, q in enumerate(questions):
-            # مرونة قراءة الأعمدة المطابقة للمخطط الهندسي [cite: 2026-02-17]
-            q_text = q.get('question_content') or q.get('question') 
+            # توحيد قراءة البيانات بين الجدولين [cite: 2026-02-17]
+            q_text = q.get('question_content') or q.get('question') or q.get('text')
             ans = q.get('correct_answer') or q.get('answer')
             cat_name = q.get('category') or "عام"
             
-            if not q_text: continue 
-
             active_quizzes[chat_id] = {
                 "active": True, 
-                "ans": str(ans).strip() if ans else "", 
+                "ans": str(ans).strip(), 
                 "winners": [], 
-                "mode": quiz_data.get('mode', 'السرعة ⚡'),
                 "hint_sent": False
             }
             
             settings = {
                 'owner_name': owner_name, 
                 'mode': quiz_data.get('mode', 'السرعة ⚡'), 
-                'time_limit': quiz_data.get('time_limit', 15), 
+                'time_limit': int(quiz_data.get('time_limit', 15)), 
                 'cat_name': cat_name
             }
+
+            await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
-            await send_quiz_question(chat_id, {'question_content': q_text}, i+1, len(questions), settings)
-            
-            # (بقية كود التوقيت والنتائج كما هو عندك بدون تغيير)
+            # --- دورة انتظار الإجابة مع التلميح الذكي ---
             start_time = time.time()
-            time_limit = int(quiz_data.get('time_limit', 15))
-            while time.time() - start_time < time_limit:
-                await asyncio.sleep(0.1)
-                if quiz_data.get('mode') == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
-                    break
+            time_limit = settings['time_limit']
             
+            while time.time() - start_time < time_limit:
+                await asyncio.sleep(0.5)
+                
+                # استدعاء دالة التلميح (الربط الثاني الناقص) [cite: 2026-02-17]
+                if not active_quizzes[chat_id]['hint_sent'] and (time.time() - start_time) >= (time_limit / 2):
+                    hint = await generate_smart_hint(ans) # هنا استخدمنا الدالة الذكية
+                    await bot.send_message(chat_id, hint)
+                    active_quizzes[chat_id]['hint_sent'] = True
+
+                if not active_quizzes[chat_id]['active']: # إذا تمت الإجابة
+                    break
+
             active_quizzes[chat_id]['active'] = False
+            
+            # توزيع النقاط وعرض النتائج (استدعاء دوالك)
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
-            
+
             await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
             await asyncio.sleep(2)
 
@@ -1132,9 +1149,8 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         
     except Exception as e:
         logging.error(f"Global Engine Error: {e}")
-        await bot.send_message(chat_id, f"⚠️ **تعثر المحرك الملكي:**\n`{str(e)}`", parse_mode="Markdown")
-        
-            
+        await bot.send_message(chat_id, f"⚠️ تعثر المحرك: {e}")
+    
 # ==========================================
 # 4. رصد الإجابات (النسخة الصامتة المعتمدة - ياسر)
 # ==========================================
