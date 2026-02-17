@@ -1075,10 +1075,9 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
 # --- 1. تعريف المخزن المؤقت في أعلى الملف ---
 active_quizzes = {}
 
-# --- 2. المحرك المطور مع كاشف الأخطاء الملكي 🔎 ---
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # استخراج الإعدادات
+        # استخراج الإعدادات الأساسية
         quiz_title = quiz_data.get('quiz_name') or "مسابقة جديدة"
         selected_cats = quiz_data.get('cats', [])
         q_count = int(quiz_data.get('questions_count', 10))
@@ -1147,13 +1146,14 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         overall_scores = {}
 
         for i, q in enumerate(questions):
-            # توحيد قراءة البيانات
+            # توحيد قراءة البيانات (يدعم الجدولين القديم والجديد)
             q_text = q.get('question_content') or q.get('question') or q.get('text')
             ans = q.get('correct_answer') or q.get('answer')
             cat_name = q.get('category') or "عام"
             
             if not q_text: continue 
 
+            # تحديث حالة المسابقة في القاموس العالمي
             active_quizzes[chat_id] = {
                 "active": True, 
                 "ans": str(ans).strip(), 
@@ -1171,14 +1171,15 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
+            # دورة وقت السؤال
             start_time = time.time()
-            time_limit = settings['time_limit']
-            while time.time() - start_time < time_limit:
+            while time.time() - start_time < settings['time_limit']:
                 await asyncio.sleep(0.5)
                 if not active_quizzes[chat_id]['active']: break 
 
-            active_quizzes[chat_id]['active'] = False
+            active_quizzes[chat_id].update({"active": False})
             
+            # توزيع النقاط
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
             
@@ -1188,27 +1189,9 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         await send_final_results(chat_id, overall_scores, len(questions))
         
     except Exception as e:
-        print(f"❌ عطل في المحرك: {e}")
+        print(f"❌ عطل شامل في المحرك: {e}")
         await bot.send_message(chat_id, f"⚠️ تعثر المحرك الملكي: {e}")
         
-@dp.message_handler(lambda m: not m.text.startswith('/'))
-async def check_ans(m: types.Message):
-    cid = m.chat.id
-    if cid in active_quizzes and active_quizzes[cid]['active']:
-        user_ans = m.text.strip().lower()
-        correct_ans = active_quizzes[cid]['ans'].strip().lower()
-        
-        if user_ans == correct_ans:
-            already_won = any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners'])
-            if not already_won:
-                active_quizzes[cid]['winners'].append({
-                    "name": m.from_user.first_name, 
-                    "id": m.from_user.id
-                })
-                if active_quizzes[cid]['mode'] == 'السرعة ⚡':
-                    active_quizzes[cid]['active'] = False
-                    
-    
 # ==========================================
 # 👑 لوحة تحكم المطور (ياسر) - الإدارة الشاملة
 # ==========================================
