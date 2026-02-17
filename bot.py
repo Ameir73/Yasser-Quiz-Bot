@@ -1087,7 +1087,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         source_label = "أقسام الأعضاء 👤" 
 
         try:
-                        if is_bot:
+               if is_bot:
                 source_label = "أسئلة البوت 🤖"
                 
                 # --- [ بداية التحقيق الملكي المطور 🔎 ] ---
