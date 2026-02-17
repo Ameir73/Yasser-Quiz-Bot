@@ -1112,9 +1112,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                     res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
                     questions = res.data
                 
-                # --- [ نهاية التحقيق ] ---
-        
-            else:
+                 else:
                 # مسار الأعضاء
                 cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
                 if cat_ids:
