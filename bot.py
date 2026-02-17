@@ -1369,9 +1369,10 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
     # ... بقية دوال الحذف (del, fndel) تظل كما هي مع مراعاة استخدام category_id في الحذف ...
     await c.answer()
 
-# --- معالج الرفع الجماعي (النسخة النهائية المطابقة لجدول bot_questions) ---
+# --- معالج الرفع الجماعي النهائي (ياسر الملك) ---
 @dp.message_handler(state="wait_for_bulk_questions", user_id=ADMIN_ID)
 async def process_bulk_questions(message: types.Message, state: FSMContext):
+    # خيارات الخروج من الحالة
     if message.text.lower() in ["خروج", "إلغاء", "back", "exit"]:
         await state.finish()
         await message.answer("✅ تم الخروج من وضع الرفع الجماعي.")
@@ -1379,13 +1380,14 @@ async def process_bulk_questions(message: types.Message, state: FSMContext):
 
     lines = message.text.split('\n')
     success, error = 0, 0
+    
     for line in lines:
         if '+' in line:
             parts = line.split('+')
             if len(parts) == 3:
                 q_text, q_ans, cat_name = parts[0].strip(), parts[1].strip(), parts[2].strip()
                 try:
-                    # 1. جلب/إنشاء القسم في جدول bot_categories [cite: 2026-01-01]
+                    # 1. فحص أو إنشاء القسم في جدول bot_categories [cite: 2026-01-01]
                     cat_res = supabase.table("bot_categories").select("id").eq("name", cat_name).execute()
                     if cat_res.data:
                         cat_id = cat_res.data[0]['id']
@@ -1393,22 +1395,35 @@ async def process_bulk_questions(message: types.Message, state: FSMContext):
                         new_cat = supabase.table("bot_categories").insert({"name": cat_name}).execute()
                         cat_id = new_cat.data[0]['id']
 
-                    # 2. الإدخال المباشر في bot_questions (مطابق لمخططك) [cite: 2026-02-17]
+                    # 2. الإدخال في bot_questions مع تلبية كافة شروط Not-Null [cite: 2026-02-17]
                     supabase.table("bot_questions").insert({
-                        "question_content": q_text,
-                        "correct_answer": q_ans,
-                        "bot_category_id": cat_id,
-                        "created_by": str(ADMIN_ID) # العمود الإلزامي في المخطط [cite: 2026-02-17]
+                        "question_content": q_text,      # نص السؤال
+                        "correct_answer": q_ans,        # الإجابة الصحيحة
+                        "bot_category_id": cat_id,       # الربط عبر الـ ID (من المخطط) [cite: 2026-02-17]
+                        "category": cat_name,            # الربط النصي (لحل خطأ 23502) [cite: 2026-02-17]
+                        "created_by": str(ADMIN_ID)      # معرّف المنشئ (متطلب المخطط) [cite: 2026-02-17]
                     }).execute()
+                    
                     success += 1
                 except Exception as e:
-                    logging.error(f"Final Attempt Error: {e}")
-                    await message.answer(f"❌ تعثر في: {q_text[:10]}\nالسبب: {str(e)}")
+                    # طباعة الخطأ التفصيلي في حال حدوث شيء غير متوقع [cite: 2026-01-01]
+                    logging.error(f"Error for {q_text}: {e}")
+                    await message.answer(f"❌ تعثر في: {q_text[:15]}\nالسبب: {str(e)}")
                     error += 1
-            else: error += 1
-        else: error += 1
+            else:
+                error += 1
+        else:
+            # إذا كان السطر لا يحتوي على علامة +
+            if line.strip(): error += 1
 
-    await message.answer(f"📊 <b>ملخص الرفع (ياسر الملك):</b>\n✅ نجاح: {success}\n❌ فشل: {error}\n\n📥 أرسل الدفعة التالية أو 'خروج'.", parse_mode="HTML")
+    # إرسال التقرير النهائي للملك ياسر [cite: 2026-01-08]
+    await message.answer(
+        f"📊 <b>ملخص الرفع النهائي (ياسر الملك):</b>\n"
+        f"✅ نجاح: {success}\n"
+        f"❌ فشل: {error}\n\n"
+        f"📥 أرسل الدفعة التالية بنفس الصيغة أو أرسل 'خروج'.", 
+        parse_mode="HTML"
+    )
     
 # ==========================================
 # 5. نهاية الملف: ضمان التشغيل 24/7 على Render
