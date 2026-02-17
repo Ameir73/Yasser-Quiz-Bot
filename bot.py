@@ -9,6 +9,8 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
+active_quizzes = {}
+
 # --- البيانات الخاصة بياسر ---
 API_TOKEN = '7948017595:AAF53pFLKYV0qL10JR5109DAM7MqGHiWBGQ'
 SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
