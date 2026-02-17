@@ -1087,34 +1087,26 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         source_label = "أقسام الأعضاء 👤" 
 
         try:
-               if is_bot:
+              if is_bot:
                 source_label = "أسئلة البوت 🤖"
-                
-                # --- [ بداية التحقيق الملكي المطور 🔎 ] ---
                 cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
                 
-                # محاولة الجلب بالـ ID (المسار الرئيسي لبياناتك)
                 if cat_ids:
                     res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).execute()
                 else:
-                    # في حال لم يتم اختيار أقسام (سحب عشوائي شامل)
                     res = supabase.table("bot_questions").select("*").limit(100).execute()
                 
-                # التحقق من وجود بيانات واختيار العدد المطلوب عشوائياً
                 if res.data and len(res.data) > 0:
                     import random
                     all_fetched = res.data
-                    # نختار عشوائياً q_count من الأسئلة التي جلبناها
                     questions = random.sample(all_fetched, min(len(all_fetched), q_count))
-                    print(f"✅ تم جلب {len(questions)} سؤال بنجاح من قاعدة بيانات البوت.")
                 else:
-                    # محاولة أخيرة بالبحث النصي
                     res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
                     questions = res.data
-                
-                 else:
+            else:
                 # مسار الأعضاء
                 cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
+                
                 if cat_ids:
                     res = supabase.table("questions").select("*").in_("category_id", cat_ids).limit(q_count).execute()
                     questions = res.data
