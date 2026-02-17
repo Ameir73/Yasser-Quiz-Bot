@@ -1033,12 +1033,33 @@ async def handle_secure_actions(c: types.CallbackQuery):
         logging.error(f"Error in Secure Logic: {e}")
                                                         
 # ==========================================
-# 2. محركات التصميم والزخرفة (المتوافقة مع المخطط الجديد)
+# 2. محركات التصميم والزخرفة والتلميح (نسخة الإشعارات العلوية الطائرة)
 # ==========================================
+async def countdown_timer(message: types.Message, seconds=5):
+    try:
+        for i in range(seconds, 0, -1):
+            await message.edit_text(f"🚀 **تجهيز المسابقة...**\n\nستبدأ خلال: {i}")
+            await asyncio.sleep(1)
+    except Exception as e:
+        logging.error(f"Countdown Error: {e}")
+
+# --- [دالة توليد التلميح الذكي] ---
+async def generate_smart_hint(answer_text):
+    answer_text = str(answer_text).strip()
+    words = answer_text.split()
+    if len(words) == 1:
+        if len(answer_text) <= 3:
+            return f"💡 يبدأ بحرف ( {answer_text[0]} )"
+        return f"💡 يبدأ بـ ( {answer_text[:2]} ) وينتهي بـ ( {answer_text[-1]} )"
+    else:
+        prompt = f"أعطني تلميحاً ذكياً وقصيراً جداً عن ({answer_text}) دون ذكر أي كلمة من الإجابة."
+        try:
+            ai_hint = await call_gemini_ai(prompt) 
+            return f"💡 تلميح ذكي: {ai_hint}"
+        except:
+            return f"💡 {len(words)} كلمات، تبدأ بـ ( {answer_text[:2]} )"
+
 async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
-    # نستخدم .get لضمان عدم توقف البوت إذا اختلف مسمى العمود
-    question_text = q_data.get('question_text') or q_data.get('question_content') or "لا يوجد نص للسؤال"
-    
     text = (
         f"🎓 **الـمنـظـم:** {settings['owner_name']} ☁️☁️\n"
         f"┏━━━━━━━━━━━━━━┓\n"
@@ -1047,9 +1068,10 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
         f"  🚀 **سرعة:** {settings['mode']} 🚀\n"
         f"  ⏳ **المهلة:** {settings['time_limit']} ثانية ⏳\n"
         f"┗━━━━━━━━━━━━━━┛\n\n"
-        f"❓ **السؤال:**\n**{question_text}**"
+        f"❓ **السؤال:**\n**{q_data['question_text']}**"
     )
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
+    
 
 # ==========================================
 # 3. محرك تشغيل المسابقة (المطور - الربط الكامل)
