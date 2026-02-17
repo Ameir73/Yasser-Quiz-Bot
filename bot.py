@@ -1240,7 +1240,8 @@ async def admin_back_to_main(c: types.CallbackQuery):
     )
     await c.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
 
-# --- [ إدارة أسئلة البوت الرسمية ] ---
+# --- [ إدارة أسئلة البوت الرسمية - النسخة المصححة لياسر ] ---
+
 @dp.callback_query_handler(lambda c: c.data.startswith('botq_'), user_id=ADMIN_ID)
 async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext):
     data_parts = c.data.split('_')
@@ -1269,14 +1270,45 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
             return await c.answer("⚠️ لا توجد أقسام مسجلة.", show_alert=True)
         
         categories = res.data
-        await state.update_data(current_categories=categories)
         kb = InlineKeyboardMarkup(row_width=2)
-        for i, cat in enumerate(categories):
-            kb.insert(InlineKeyboardButton(f"📁 {cat['name']}", callback_data=f"botq_mng_{i}"))
+        for cat in categories:
+            # التعديل الذهبي هنا: نربط الزر بـ ID القسم الحقيقي من سوبابيز
+            kb.insert(InlineKeyboardButton(f"📁 {cat['name']}", callback_data=f"botq_mng_{cat['id']}"))
+        
         kb.add(InlineKeyboardButton("⬅️ عودة", callback_data="botq_main"))
         await c.message.edit_text("🗂️ <b>أقسام أسئلة البوت الرسمية:</b>", reply_markup=kb, parse_mode="HTML")
 
+    # --- معالج الضغط على اسم القسم (هذا الجزء الذي كان ناقصاً لديك) ---
+    elif action == "mng":
+        cat_id = data_parts[2]
+        # جلب عدد الأسئلة الفعلي لهذا القسم من جدول bot_questions
+        # نستخدم العمود bot_category_id كما هو في ملفك الـ CSV
+        res = supabase.table("bot_questions").select("id", count="exact").eq("bot_category_id", int(cat_id)).execute()
+        q_count = res.count if res.count is not None else 0
+        
+        kb = InlineKeyboardMarkup(row_width=1)
+        kb.add(
+            InlineKeyboardButton(f"🗑️ حذف جميع أسئلة هذا القسم ({q_count})", callback_data=f"botq_del_{cat_id}"),
+            InlineKeyboardButton("🔙 عودة للأقسام", callback_data="botq_viewcats")
+        )
+        
+        await c.message.edit_text(
+            f"📂 <b>إدارة القسم (ID: {cat_id})</b>\n\n"
+            f"📊 عدد الأسئلة المتوفرة: <b>{q_count}</b>\n"
+            "ماذا تريد أن تفعل؟", 
+            reply_markup=kb, parse_mode="HTML"
+        )
+
+    # --- معالج حذف أسئلة القسم ---
+    elif action == "del":
+        cat_id = data_parts[2]
+        supabase.table("bot_questions").delete().eq("bot_category_id", int(cat_id)).execute()
+        await c.answer("✅ تم حذف جميع أسئلة القسم بنجاح", show_alert=True)
+        # العودة لقائمة الأقسام بعد الحذف
+        await process_bot_questions_panel(c, state) 
+
     await c.answer()
+    
 
 # --- معالج الرفع الجماعي وأمر الخروج (ياسر الملك) ---
 @dp.message_handler(state="wait_for_bulk_questions", user_id=ADMIN_ID)
