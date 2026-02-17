@@ -1087,38 +1087,33 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         source_label = "أقسام الأعضاء 👤" 
 
         try:
-            if is_bot:
+                        if is_bot:
                 source_label = "أسئلة البوت 🤖"
                 
-                # --- [ بداية التحقيق الملكي 🔎 ] ---
-                print("\n" + "═"*40)
-                print(f"🚀 بدء فحص جلب أسئلة البوت...")
-                print(f"📍 الأقسام المختارة من اليوزر: {selected_cats}")
-
-                # تحويل المعرفات لأرقام صحيحة لضمان مطابقة الـ ID
+                # --- [ بداية التحقيق الملكي المطور 🔎 ] ---
                 cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
-                print(f"🔢 المعرفات بعد التحويل لـ (Integer): {cat_ids}")
                 
-                # 1. محاولة الجلب بالـ ID (المسار الرئيسي)
-                res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).limit(q_count).execute()
-                print(f"📊 نتيجة البحث بالـ ID: تم العثور على {len(res.data) if res.data else 0} سؤال")
+                # محاولة الجلب بالـ ID (المسار الرئيسي لبياناتك)
+                if cat_ids:
+                    res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).execute()
+                else:
+                    # في حال لم يتم اختيار أقسام (سحب عشوائي شامل)
+                    res = supabase.table("bot_questions").select("*").limit(100).execute()
                 
-                # 2. إذا فشل، نجرب بالاسم النصي
-                if not res.data:
-                    print("⚠️ فشل الجلب بالـ ID، نحاول البحث بالأسماء النصية...")
+                # التحقق من وجود بيانات واختيار العدد المطلوب عشوائياً
+                if res.data and len(res.data) > 0:
+                    import random
+                    all_fetched = res.data
+                    # نختار عشوائياً q_count من الأسئلة التي جلبناها
+                    questions = random.sample(all_fetched, min(len(all_fetched), q_count))
+                    print(f"✅ تم جلب {len(questions)} سؤال بنجاح من قاعدة بيانات البوت.")
+                else:
+                    # محاولة أخيرة بالبحث النصي
                     res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
-                    print(f"📊 نتيجة البحث بالنص: تم العثور على {len(res.data) if res.data else 0} سؤال")
+                    questions = res.data
                 
-                # 3. خطة الطوارئ (سيتم طباعتها لتعرف أنها اشتغلت)
-                if not res.data:
-                    print("🚨 الخلل: لم أجد أي تطابق! سيتم سحب عينات عشوائية من جدول البوت للفحص...")
-                    res = supabase.table("bot_questions").select("*").limit(q_count).execute()
-                    print(f"📊 نتيجة سحب الطوارئ: تم جلب {len(res.data) if res.data else 0} سؤال")
-                
-                print("═"*40 + "\n")
                 # --- [ نهاية التحقيق ] ---
-                
-                questions = res.data
+        
             else:
                 # مسار الأعضاء
                 cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
