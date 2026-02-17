@@ -1321,8 +1321,8 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
         )
         await state.set_state("wait_for_bulk_questions")
 
-    elif action == "viewcats":
-        # جلب الأقسام من جدول bot_categories الجديد [cite: 2026-01-01]
+        elif action == "viewcats":
+        # 1. جلب الأقسام من الجدول الرسمي [cite: 2026-02-17]
         res = supabase.table("bot_categories").select("*").execute()
         if not res.data:
             return await c.answer("⚠️ لا توجد أقسام مسجلة في جدول البوت حالياً.", show_alert=True)
@@ -1332,6 +1332,7 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
         
         kb = InlineKeyboardMarkup(row_width=2)
         for i, cat in enumerate(categories):
+            # سنستخدم 'name' للعرض و 'id' مخفي في الـ callback [cite: 2026-01-01]
             kb.insert(InlineKeyboardButton(f"📁 {cat['name']}", callback_data=f"botq_mng_{i}"))
         
         kb.add(InlineKeyboardButton("⬅️ عودة", callback_data="botq_main"))
@@ -1344,15 +1345,29 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
         
         if idx < len(categories):
             cat_info = categories[idx]
-            # جلب عدد الأسئلة المرتبطة بهذا الـ ID [cite: 2026-01-01]
-            res = supabase.table("bot_questions").select("id", count="exact").eq("category_id", cat_info['id']).execute()
+            
+            # 2. الإصلاح الجوهري هنا: البحث بالعمود bot_category_id لضمان مطابقة جدول bot_questions [cite: 2026-02-17]
+            try:
+                res = supabase.table("bot_questions").select("id", count="exact").eq("bot_category_id", cat_info['id']).execute()
+                question_count = res.count if res.count is not None else 0
+            except:
+                # محاولة ثانية بـ category_id إذا كان اسم العمود مختلف [cite: 2026-01-01]
+                res = supabase.table("bot_questions").select("id", count="exact").eq("category_id", cat_info['id']).execute()
+                question_count = res.count if res.count is not None else 0
+
             kb = InlineKeyboardMarkup(row_width=1)
             kb.add(
                 InlineKeyboardButton("🗑️ حذف القسم بالكامل", callback_data=f"botq_del_{idx}"),
                 InlineKeyboardButton("⬅️ عودة", callback_data="botq_viewcats")
             )
-            await c.message.edit_text(f"📂 <b>القسم: {cat_info['name']}</b>\n📊 إجمالي الأسئلة: {res.count}", reply_markup=kb, parse_mode="HTML")
-
+            await c.message.edit_text(
+                f"📂 <b>القسم: {cat_info['name']}</b>\n"
+                f"🆔 المعرف: <code>{cat_info['id']}</code>\n"
+                f"📊 إجمالي الأسئلة: {question_count}", 
+                reply_markup=kb, 
+                parse_mode="HTML"
+            )
+            
     # ... بقية دوال الحذف (del, fndel) تظل كما هي مع مراعاة استخدام category_id في الحذف ...
     await c.answer()
 
