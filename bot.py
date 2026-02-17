@@ -1076,7 +1076,7 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
 # --- 1. تعريف المخزن المؤقت في المحرك 
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
-    try:
+     try:
         # استخراج الإعدادات الأساسية
         quiz_title = quiz_data.get('quiz_name') or "مسابقة جديدة"
         selected_cats = quiz_data.get('cats', [])
@@ -1085,9 +1085,9 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
         questions = []
         source_label = "أقسام الأعضاء 👤" 
-
+         
         try:
-              if is_bot:
+            if is_bot:
                 source_label = "أسئلة البوت 🤖"
                 cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
                 
