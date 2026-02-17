@@ -1165,7 +1165,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
             active_quizzes[chat_id].update({"active": False})
             
-            # توزيع النقاط
+                        # توزيع النقاط
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
             
@@ -1177,6 +1177,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
     except Exception as e:
         print(f"❌ عطل شامل في المحرك: {e}")
         await bot.send_message(chat_id, f"⚠️ تعثر المحرك الملكي: {e}")
+
         
 # ==========================================
 # 👑 لوحة تحكم المطور (ياسر) - الإدارة الشاملة
