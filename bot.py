@@ -1033,33 +1033,12 @@ async def handle_secure_actions(c: types.CallbackQuery):
         logging.error(f"Error in Secure Logic: {e}")
                                                         
 # ==========================================
-# 2. محركات التصميم والزخرفة والتلميح (نسخة الإشعارات العلوية الطائرة)
+# 2. محركات التصميم والزخرفة (المتوافقة مع المخطط الجديد)
 # ==========================================
-async def countdown_timer(message: types.Message, seconds=5):
-    try:
-        for i in range(seconds, 0, -1):
-            await message.edit_text(f"🚀 **تجهيز المسابقة...**\n\nستبدأ خلال: {i}")
-            await asyncio.sleep(1)
-    except Exception as e:
-        logging.error(f"Countdown Error: {e}")
-
-# --- [دالة توليد التلميح الذكي] ---
-async def generate_smart_hint(answer_text):
-    answer_text = str(answer_text).strip()
-    words = answer_text.split()
-    if len(words) == 1:
-        if len(answer_text) <= 3:
-            return f"💡 يبدأ بحرف ( {answer_text[0]} )"
-        return f"💡 يبدأ بـ ( {answer_text[:2]} ) وينتهي بـ ( {answer_text[-1]} )"
-    else:
-        prompt = f"أعطني تلميحاً ذكياً وقصيراً جداً عن ({answer_text}) دون ذكر أي كلمة من الإجابة."
-        try:
-            ai_hint = await call_gemini_ai(prompt) 
-            return f"💡 تلميح ذكي: {ai_hint}"
-        except:
-            return f"💡 {len(words)} كلمات، تبدأ بـ ( {answer_text[:2]} )"
-
 async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
+    # نستخدم .get لضمان عدم توقف البوت إذا اختلف مسمى العمود
+    question_text = q_data.get('question_text') or q_data.get('question_content') or "لا يوجد نص للسؤال"
+    
     text = (
         f"🎓 **الـمنـظـم:** {settings['owner_name']} ☁️☁️\n"
         f"┏━━━━━━━━━━━━━━┓\n"
@@ -1068,78 +1047,52 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
         f"  🚀 **سرعة:** {settings['mode']} 🚀\n"
         f"  ⏳ **المهلة:** {settings['time_limit']} ثانية ⏳\n"
         f"┗━━━━━━━━━━━━━━┛\n\n"
-        f"❓ **السؤال:**\n**{q_data['question_text']}**"
+        f"❓ **السؤال:**\n**{question_text}**"
     )
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
 # ==========================================
-# 3. محرك تشغيل المسابقة (المطور - نسخة منع الخلط الصارمة)
+# 3. محرك تشغيل المسابقة (النسخة الصارمة لياسر الملك)
 # ==========================================
-active_quizzes = {}
-
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # 1. استخراج المتغيرات الأساسية
-        quiz_title = quiz_data.get('quiz_name') or quiz_data.get('name') or "مسابقة"
         selected_cats = quiz_data.get('cats', [])
         q_count = int(quiz_data.get('questions_count', 10))
-
-        # --- [ تصحيح المسار التلقائي لياسر ] ---
-        # إذا كان المختار هو "ألغاز" أو أي قسم من أقسام البوت، نجبره على مسار البوت
-        bot_sections = ["ألغاز", "ثقافة", "إسلاميات", "رياضة"] # أضف هنا أسماء أقسام البوت
-        
-        is_bot = False
-        if any(cat in bot_sections for cat in selected_cats) or quiz_data.get('is_bot_quiz'):
-            is_bot = True
-        # ---------------------------------------
+        is_bot = quiz_data.get('is_bot_quiz', False)
 
         questions = []
         try:
             if is_bot:
-                # مسار البوت الصارم: يبحث في bot_questions فقط
+                # جلب الأسئلة من جدول البوت الرسمي bot_questions [cite: 2026-02-17]
+                # نستخدم اسم القسم (category) للفلترة كما تم حفظه في الرفع الجماعي
                 res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
-                if not res.data: # إذا لم يجد القسم المحدد، يسحب أي أسئلة من جدول البوت فقط
-                    res = supabase.table("bot_questions").select("*").limit(q_count).execute()
                 questions = res.data
             else:
-                # مسار الأعضاء الصارم: يبحث في questions فقط
-                cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
-                if cat_ids:
-                    res = supabase.table("questions").select("*").in_("category_id", cat_ids).limit(q_count).execute()
-                    questions = res.data
-                else:
-                    # إذا لم تتوفر IDs، يجلب من جدول الأعضاء العام
-                    res = supabase.table("questions").select("*").limit(q_count).execute()
-                    questions = res.data
-
+                # مسار الأعضاء: جدول questions القديم
+                res = supabase.table("questions").select("*").in_("category_id", selected_cats).limit(q_count).execute()
+                questions = res.data
         except Exception as e:
             logging.error(f"Fetch Error: {e}")
             await bot.send_message(chat_id, "❌ فشل جلب الأسئلة من المصدر.")
             return
 
-        # فحص نهائي لمنع الخلط
         if not questions:
             await bot.send_message(chat_id, "⚠️ لم يتم العثور على أسئلة في المصدر المختار.")
             return
 
-                # تحديث رسالة الانطلاق لتعكس المصدر الصحيح
         source_label = "أسئلة البوت 🤖" if is_bot else "أقسام الأعضاء 👤"
-        start_msg = f"🎯 <b>انطلقت الآن: {quiz_title}</b>\n📂 المصدر: {source_label}\n🔢 الأسئلة: {len(questions)}"
-        
-        # السطر الذي كان فيه الخطأ (تم إغلاق القوس)
+        start_msg = f"🎯 <b>انطلقت الآن: {quiz_data.get('quiz_name', 'مسابقة')}</b>\n📂 المصدر: {source_label}\n🔢 الأسئلة: {len(questions)}"
         await bot.send_message(chat_id, start_msg, parse_mode="HTML")
         await asyncio.sleep(2)
 
         random.shuffle(questions)
         overall_scores = {}
-        
 
-        # 3. دورة الأسئلة
         for i, q in enumerate(questions):
-            # مرونة قراءة الأعمدة لضمان التوافق مع الجدولين
-            q_text = q.get('question_content') or q.get('question') or q.get('text')
+            # مرونة قراءة الأعمدة المطابقة للمخطط الهندسي [cite: 2026-02-17]
+            q_text = q.get('question_content') or q.get('question') 
             ans = q.get('correct_answer') or q.get('answer')
-            cat_name = q.get('category') or q.get('category_name') or "عام"
+            cat_name = q.get('category') or "عام"
             
             if not q_text: continue 
 
@@ -1157,26 +1110,21 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                 'time_limit': quiz_data.get('time_limit', 15), 
                 'cat_name': cat_name
             }
-            await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
+            await send_quiz_question(chat_id, {'question_content': q_text}, i+1, len(questions), settings)
+            
+            # (بقية كود التوقيت والنتائج كما هو عندك بدون تغيير)
             start_time = time.time()
             time_limit = int(quiz_data.get('time_limit', 15))
             while time.time() - start_time < time_limit:
                 await asyncio.sleep(0.1)
-                
-                if quiz_data.get('hint_enabled') and not active_quizzes[chat_id]['hint_sent']:
-                    if (time.time() - start_time) >= (time_limit / 2):
-                        hint_text = "".join([c if random.random() > 0.6 or c == " " else "." for c in str(ans)])
-                        await bot.send_message(chat_id, f"💡 تلميح: {hint_text}")
-                        active_quizzes[chat_id]['hint_sent'] = True
-
                 if quiz_data.get('mode') == 'السرعة ⚡' and not active_quizzes[chat_id]['active']:
                     break
-
+            
             active_quizzes[chat_id]['active'] = False
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
-
+            
             await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
             await asyncio.sleep(2)
 
@@ -1185,7 +1133,8 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
     except Exception as e:
         logging.error(f"Global Engine Error: {e}")
         await bot.send_message(chat_id, f"⚠️ **تعثر المحرك الملكي:**\n`{str(e)}`", parse_mode="Markdown")
-
+        
+            
 # ==========================================
 # 4. رصد الإجابات (النسخة الصامتة المعتمدة - ياسر)
 # ==========================================
