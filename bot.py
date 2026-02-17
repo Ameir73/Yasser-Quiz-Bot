@@ -578,18 +578,28 @@ async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
     )
     await c.message.edit_text(text, reply_markup=kb)
 
-# --- جلب أقسام البوت الرسمية ---
+# --- جلب أقسام البوت الرسمية (تعديل ياسر الملك) ---
 @dp.callback_query_handler(lambda c: c.data == 'bot_setup_step1', state="*")
 async def start_bot_selection(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
-    res = supabase.table("bot_questions").select("category").execute()
+    
+    # جلب الأقسام مباشرة من الجدول المخصص لها [cite: 2026-02-17]
+    res = supabase.table("bot_categories").select("id, name").execute()
+    
     if not res.data:
         await c.answer("⚠️ لا توجد أقسام رسمية حالياً!", show_alert=True)
         return
-    unique_cats = sorted(list(set([item['category'] for item in res.data])))
-    eligible_cats = [{"id": cat, "name": cat} for cat in unique_cats]
+
+    # تحويل البيانات لتناسب وظيفة render_categories_list
+    # لاحظ أننا نستخدم الـ ID الحقيقي للقسم لضمان دقة الربط [cite: 2026-02-17]
+    eligible_cats = [{"id": str(item['id']), "name": item['name']} for item in res.data]
+    
+    # تحديث الحالة: is_bot_quiz=True ليعرف البوت أننا في القسم الرسمي
     await state.update_data(eligible_cats=eligible_cats, selected_cats=[], is_bot_quiz=True) 
+    
+    # استدعاء دالة العرض (التي يفترض أنها موجودة في كودك)
     await render_categories_list(c.message, eligible_cats, [])
+    
 
 # --- 1.5 - جلب الأقسام الخاصة بالمستخدم ---
 @dp.callback_query_handler(lambda c: c.data == 'my_setup_step1', state="*")
