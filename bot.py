@@ -1075,7 +1075,7 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
 
 # --- 1. تعريف المخزن المؤقت في المحرك 
 
-async def Start_quiz_engine(chat_id, quiz_data, owner_name):
+async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
         # استخراج الإعدادات الأساسية
         quiz_title = quiz_data.get('quiz_name') or "مسابقة جديدة"
