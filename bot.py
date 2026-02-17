@@ -1075,8 +1075,8 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
 
 # --- 1. تعريف المخزن المؤقت في المحرك 
 
-async def start_quiz_engine(chat_id, quiz_data, owner_name):
-     try:
+async def Start_quiz_engine(chat_id, quiz_data, owner_name):
+    try:
         # استخراج الإعدادات الأساسية
         quiz_title = quiz_data.get('quiz_name') or "مسابقة جديدة"
         selected_cats = quiz_data.get('cats', [])
@@ -1085,46 +1085,37 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
         questions = []
         source_label = "أقسام الأعضاء 👤" 
-         
-        try:
-            if is_bot:
-                source_label = "أسئلة البوت 🤖"
-                cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
-                
-                if cat_ids:
-                    res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).execute()
-                else:
-                    res = supabase.table("bot_questions").select("*").limit(100).execute()
-                
-                if res.data and len(res.data) > 0:
-                    import random
-                    all_fetched = res.data
-                    questions = random.sample(all_fetched, min(len(all_fetched), q_count))
-                else:
-                    res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
-                    questions = res.data
-            else:
-                # مسار الأعضاء
-                cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
-                
-                if cat_ids:
-                    res = supabase.table("questions").select("*").in_("category_id", cat_ids).limit(q_count).execute()
-                    questions = res.data
-                else:
-                    res = supabase.table("questions").select("*").limit(q_count).execute()
-                    questions = res.data
 
-        except Exception as e:
-            print(f"❌ خطأ تقني أثناء مخاطبة سوبابيز: {e}")
-            await bot.send_message(chat_id, "❌ حدث خطأ أثناء جلب الأسئلة.")
-            return
+        if is_bot:
+            source_label = "أسئلة البوت 🤖"
+            cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
+            
+            if cat_ids:
+                res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).execute()
+            else:
+                res = supabase.table("bot_questions").select("*").limit(100).execute()
+            
+            if res.data and len(res.data) > 0:
+                import random
+                all_fetched = res.data
+                questions = random.sample(all_fetched, min(len(all_fetched), q_count))
+            else:
+                res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
+                questions = res.data
+        else:
+            cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
+            if cat_ids:
+                res = supabase.table("questions").select("*").in_("category_id", cat_ids).limit(q_count).execute()
+                questions = res.data
+            else:
+                res = supabase.table("questions").select("*").limit(q_count).execute()
+                questions = res.data
 
         if not questions:
             await bot.send_message(chat_id, "⚠️ المصدر المختار فارغ حالياً.")
             return
 
-        # --- [ انطلاق المسابقة ] ---
-        #--- احبك ---
+        import random
         random.shuffle(questions)
         await bot.send_message(chat_id, f"🎯 **انطلقت الآن: {quiz_title}**\n📂 المصدر: {source_label}\n🔢 الأسئلة: {len(questions)}")
         await asyncio.sleep(2)
@@ -1132,14 +1123,12 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         overall_scores = {}
 
         for i, q in enumerate(questions):
-            # توحيد قراءة البيانات (يدعم الجدولين القديم والجديد)
             q_text = q.get('question_content') or q.get('question') or q.get('text')
             ans = q.get('correct_answer') or q.get('answer')
             cat_name = q.get('category') or "عام"
             
             if not q_text: continue 
 
-            # تحديث حالة المسابقة في القاموس العالمي
             active_quizzes[chat_id] = {
                 "active": True, 
                 "ans": str(ans).strip(), 
@@ -1157,7 +1146,6 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
-            # دورة وقت السؤال
             start_time = time.time()
             while time.time() - start_time < settings['time_limit']:
                 await asyncio.sleep(0.5)
@@ -1165,7 +1153,6 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
             active_quizzes[chat_id].update({"active": False})
             
-                        # توزيع النقاط
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
             
@@ -1177,8 +1164,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
     except Exception as e:
         print(f"❌ عطل شامل في المحرك: {e}")
         await bot.send_message(chat_id, f"⚠️ تعثر المحرك الملكي: {e}")
-
-        
+            
 # ==========================================
 # 👑 لوحة تحكم المطور (ياسر) - الإدارة الشاملة
 # ==========================================
