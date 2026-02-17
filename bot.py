@@ -8,7 +8,6 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
-
 active_quizzes = {}
 
 # --- البيانات الخاصة بياسر ---
@@ -1289,10 +1288,7 @@ async def check_button_security(c: types.CallbackQuery, state: FSMContext):
         return False
     return True
 
-# ==========================================
-# 📊 إدارة أسئلة البوت (النسخة المحدثة - الربط بجدول الأقسام)
-# ==========================================
-
+# --- [ إدارة أسئلة البوت الرسمية ] ---
 @dp.callback_query_handler(lambda c: c.data.startswith('botq_'), user_id=ADMIN_ID)
 async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext):
     data_parts = c.data.split('_')
@@ -1309,33 +1305,27 @@ async def process_bot_questions_panel(c: types.CallbackQuery, state: FSMContext)
             InlineKeyboardButton("🗂️ عرض الأقسام", callback_data="botq_viewcats"),
             InlineKeyboardButton("⬅️ عودة للرئيسية", callback_data="admin_back")
         )
-        await c.message.edit_text("🛠️ <b>إدارة الأسئلة (الموحدة)</b>\nاختر الإجراء المطلوب:", reply_markup=kb, parse_mode="HTML")
+        await c.message.edit_text("🛠️ <b>إدارة الأسئلة</b>", reply_markup=kb, parse_mode="HTML")
 
     elif action == "upload":
-        await c.message.edit_text(
-            "📥 <b>وضع الرفع الجماعي نشط:</b>\n\n"
-            "يرجى إرسال الأسئلة بالصيغة التالية:\n"
-            "<code>السؤال+الإجابة+القسم</code>\n\n"
-            "أرسل <b>خروج</b> للعودة.", 
-            parse_mode="HTML"
-        )
+        await c.message.edit_text("📥 أرسل الأسئلة بصيغة: سؤال+إجابة+قسم\n\nأرسل <b>خروج</b> للإلغاء.", parse_mode="HTML")
         await state.set_state("wait_for_bulk_questions")
 
     elif action == "viewcats":
         res = supabase.table("bot_categories").select("*").execute()
         if not res.data:
-            return await c.answer("⚠️ لا توجد أقسام مسجلة.", show_alert=True)
-            
+            return await c.answer("⚠️ لا توجد أقسام.")
+        
         categories = res.data
         await state.update_data(current_categories=categories)
-        
         kb = InlineKeyboardMarkup(row_width=2)
         for i, cat in enumerate(categories):
             kb.insert(InlineKeyboardButton(f"📁 {cat['name']}", callback_data=f"botq_mng_{i}"))
-        
         kb.add(InlineKeyboardButton("⬅️ عودة", callback_data="botq_main"))
-        await c.message.edit_text("🗂️ <b>أقسام أسئلة البوت الرسمية:</b>", reply_markup=kb, parse_mode="HTML")
-        
+        await c.message.edit_text("🗂️ الأقسام المتاحة:", reply_markup=kb)
+
+    await c.answer()
+    
 # --- معالج الرفع الجماعي النهائي (ياسر الملك) ---
 @dp.message_handler(state="wait_for_bulk_questions", user_id=ADMIN_ID)
 async def pocess_bulk_questions(message: types.Message, state: FSMContext):
