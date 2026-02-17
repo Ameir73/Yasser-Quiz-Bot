@@ -1123,12 +1123,16 @@ async def Start_quiz_engine(chat_id, quiz_data, owner_name):
         overall_scores = {}
 
         for i, q in enumerate(questions):
+            # --- [ التعديل الملكي لجلب البيانات من ملفات ياسر ] ---
             q_text = q.get('question_content') or q.get('question') or q.get('text')
             ans = q.get('correct_answer') or q.get('answer')
             cat_name = q.get('category') or "عام"
             
-            if not q_text: continue 
+            if not q_text or not ans: 
+                print(f"⚠️ سؤال ناقص البيانات في القسم {cat_name}: {q}")
+                continue 
 
+            # تحديث حالة المسابقة
             active_quizzes[chat_id] = {
                 "active": True, 
                 "ans": str(ans).strip(), 
@@ -1144,8 +1148,10 @@ async def Start_quiz_engine(chat_id, quiz_data, owner_name):
                 'cat_name': cat_name
             }
 
+            # إرسال السؤال (هذا السطر يستدعي قالب الأسئلة)
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
+            # انتظار وقت السؤال
             start_time = time.time()
             while time.time() - start_time < settings['time_limit']:
                 await asyncio.sleep(0.5)
@@ -1153,6 +1159,7 @@ async def Start_quiz_engine(chat_id, quiz_data, owner_name):
 
             active_quizzes[chat_id].update({"active": False})
             
+            # توزيع النقاط
             for w in active_quizzes[chat_id]['winners']:
                 overall_scores.setdefault(w['id'], {"name": w['name'], "points": 0})['points'] += 10
             
@@ -1164,7 +1171,7 @@ async def Start_quiz_engine(chat_id, quiz_data, owner_name):
     except Exception as e:
         print(f"❌ عطل شامل في المحرك: {e}")
         await bot.send_message(chat_id, f"⚠️ تعثر المحرك الملكي: {e}")
-            
+        
 # ==========================================
 # 👑 لوحة تحكم المطور (ياسر) - الإدارة الشاملة
 # ==========================================
