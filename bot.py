@@ -1047,37 +1047,37 @@ async def handle_secure_actions(c: types.CallbackQuery):
 # ==========================================
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        import json, random, time
-
-        # 1. التمييز الذكي: الافتراضي False عشان أسئلة الأعضاء ما تتعطل
+        # 1. التمييز الذكي (بوت أو أعضاء)
         is_bot = quiz_data.get('is_bot_quiz', False)
         
-        # اختيار الجدول والعمود المناسب بناءً على نوع المسابقة
+        # 2. تحديد الأقسام (تحويل الأرقام)
+        cat_ids = [int(c) for c in quiz_data['cats'] if str(c).isdigit()]
+        if not cat_ids:
+            await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
+            return
+
+        # 3. جلب الأسئلة بناءً على الهوية
         if is_bot:
-            t_questions = "bot_questions"
-            f_key = "bot_category_id"
+            # مسار أسئلة البوت (جدولك المرفوع)
+            res = supabase.table("bot_questions") \
+                .select("*") \
+                .in_("bot_category_id", cat_ids) \
+                .limit(int(quiz_data['questions_count'])) \
+                .execute()
         else:
-            t_questions = "questions"
-            f_key = "category_id"
+            # مسار أسئلة الأعضاء (كودك الأصلي)
+            res = supabase.table("questions") \
+                .select("*, categories(name)") \
+                .in_("category_id", cat_ids) \
+                .limit(int(quiz_data['questions_count'])) \
+                .execute()
         
-        # 2. فك تشفير الأقسام (JSON)
-        raw_cats = quiz_data.get('cats', [])
-        try:
-            cat_ids = [int(c) for c in (json.loads(raw_cats) if isinstance(raw_cats, str) else raw_cats)]
-        except:
-            cat_ids = []
-
-        # 3. جلب الأسئلة بذكاء من سوبابيز
-        res = supabase.table(t_questions).select("*").in_(f_key, cat_ids).limit(quiz_data.get('questions_count', 10)).execute()
         questions = res.data
-        
         if not questions:
-            return await bot.send_message(chat_id, f"⚠️ عذراً، لم أجد أسئلة في الأقسام المختارة لجدول {t_questions}")
+            await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة كافية في هذا المسار حالياً.")
+            return
 
-        random.shuffle(questions)
-        overall_scores = {}
-
-        # 4. حلقة الأسئلة الإبداعية
+        # تكملة الكود (random.shuffle و حلقة الأسئلة
         for i, q in enumerate(questions):
             # دعم كل مسميات الأعمدة (قديم وجديد) لضمان عدم التعطل
             q_text = q.get('question_content') or q.get('question_text') or 'نص السؤال مفقود'
