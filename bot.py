@@ -1056,21 +1056,21 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
         # 2. جلب البيانات بناءً على الجدول المختار
         if is_bot:
-            # مسار أسئلة البوت (جدول bot_questions)
+            # مسار أسئلة البوت (جدولك المرفوع CSV)
             res = supabase.table("bot_questions") \
                 .select("*") \
                 .in_("bot_category_id", cat_ids) \
                 .limit(int(quiz_data.get('questions_count', 10))) \
                 .execute()
-            cat_name_display = "أسئلة البوت"
+            cat_name_display = "أسئلة البوت 🤖"
         else:
-            # مسار أسئلة الأعضاء (جدول questions مع ربط الأقسام)
+            # مسار أسئلة الأعضاء (الجدول القديم مع ربط الأقسام)
             res = supabase.table("questions") \
                 .select("*, categories(name)") \
                 .in_("category_id", cat_ids) \
                 .limit(int(quiz_data.get('questions_count', 10))) \
                 .execute()
-            cat_name_display = "قسم خاص"
+            cat_name_display = "قسم خاص 👥"
 
         questions = res.data
         if not questions:
@@ -1081,11 +1081,11 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
         # 3. حلقة الأسئلة المرنة (تقرأ من الجدولين)
         for i, q in enumerate(questions):
-            # دعم مسميات الأعمدة المختلفة (CSV والجدول القديم)
+            # دعم كل مسميات الأعمدة (question_content لجدولك و question_text للأعضاء)
             q_text = q.get('question_content') or q.get('question_text') or '⚠️ نص السؤال مفقود'
             ans = str(q.get('correct_answer') or q.get('answer_text') or "").strip()
             
-            # جلب اسم القسم بذكاء
+            # جلب اسم القسم بذكاء (من جدول categories للأعضاء أو مباشر للبوت)
             if not is_bot and q.get('categories'):
                 current_cat = q['categories'].get('name', cat_name_display)
             else:
@@ -1099,7 +1099,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                 "hint_sent": False
             }
             
-            # إرسال السؤال عبر القالب
+            # إرسال السؤال عبر القالب الفخم
             settings = {
                 'owner_name': owner_name, 
                 'mode': quiz_data['mode'], 
@@ -1108,7 +1108,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
             }
             await send_quiz_question(chat_id, q, i+1, len(questions), settings)
             
-            # منطق مؤقت السؤال
+            # مؤقت السؤال
             start_time = time.time()
             time_limit = int(quiz_data['time_limit'])
             
@@ -1130,7 +1130,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                 uid = w['id']
                 if uid not in overall_scores:
                     overall_scores[uid] = {"name": w['name'], "points": 0}
-                overall_scores[uid]['points'] += 10
+                overall_scores[uid]['points'] += 10 
             
             await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
             await asyncio.sleep(2)
@@ -1140,8 +1140,8 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
     except Exception as e:
         import logging
-        logging.error(f"Engine Critical Error: {e}")
-                
+        logging.error(f"Engine Error: {e}")
+        
 # ==========================================
 # 4. الجزء الثالث: قالب السؤال والتلميح...........     
 # ==========================================
