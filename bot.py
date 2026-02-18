@@ -1089,34 +1089,28 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         logging.error(f"Engine Error: {e}")
                 
 # ==========================================
-# 4. رصد الإجابات (النسخة الصامتة المعتمدة - ياسر)
+# 4. الجزء الثالث: قالب السؤال والتلميح...........     
 # ==========================================
-@dp.message_handler(lambda m: not m.text.startswith('/'))
-async def check_ans(m: types.Message):
-    cid = m.chat.id
-    # التأكد أن هناك مسابقة قائمة والسؤال ما زال متاحاً للإجابة
-    if cid in active_quizzes and active_quizzes[cid]['active']:
-        
-        # تنظيف الإجابة من الفراغات وتحويلها لصغير لضمان المطابقة
-        user_ans = m.text.strip().lower()
-        correct_ans = active_quizzes[cid]['ans'].strip().lower()
-        
-        if user_ans == correct_ans:
-            # التحقق: إذا لم يكن هذا الشخص قد أجاب صح من قبل في نفس السؤال
-            already_won = any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners'])
-            
-            if not already_won:
-                # إضافة المتسابق للقائمة (الاسم الأول + الـ ID)
-                active_quizzes[cid]['winners'].append({
-                    "name": m.from_user.first_name, 
-                    "id": m.from_user.id
-                })
-                
-                # --- حالة خاصة بنظام السرعة ---
-                if active_quizzes[cid]['mode'] == 'السرعة ⚡':
-                    active_quizzes[cid]['active'] = Fals
-                    
+async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
+    # دعم مسميات CSV الجديدة
+    q_text = q_data.get('question_content') or q_data.get('question_text') or "نص مفقود"
+    
+    text = (
+        f"🎓 **الـمنـظـم:** {settings['owner_name']} ☁️\n"
+        f"┏━━━━━━━━━━━━━━┓\n"
+        f"  📌 **سؤال:** « {current_num} » من « {total_num} »\n"
+        f"  📂 **القسم:** {settings['cat_name']}\n"
+        f"  ⏳ **المهلة:** {settings['time_limit']} ثانية\n"
+        f"┗━━━━━━━━━━━━━━┛\n\n"
+        f"❓ **السؤال:**\n**{q_text}**"
+    )
+    return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
+async def delete_after(msg, delay):
+    await asyncio.sleep(delay)
+    try: await msg.delete()
+    except: pass
+        
 # =========================================
 #==========================================
 
