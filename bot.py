@@ -1041,7 +1041,6 @@ async def handle_secure_actions(c: types.CallbackQuery):
         logging.error(f"Error in Secure Logic: {e}")
         await c.answer("🚨 حدث خطأ أثناء تنفيذ الإجراء")
             
-
 # ==========================================
 # 2. محركات التشغيل والزخرفة والتلميح (نسخة الإشعارات العلوية الطائرة)
 # ==========================================
@@ -1136,6 +1135,18 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
 
     # النتائج النهائية
     await send_final_results(chat_id, overall_scores, len(questions))
+
+# فحص نوع المسابقة قبل النداء
+if quiz_config.get('is_bot_quiz'):
+    # محرك البوت (التاريخ)
+    await engine_bot_questions(chat_id, quiz_config, user_name)
+elif quiz_config.get('is_private_section'):
+    # محرك الأقسام الخاصة
+    await engine_private_questions(chat_id, quiz_config, user_name)
+else:
+    # محرك الأعضاء العام
+    await engine_user_questions(chat_id, quiz_config, user_name)
+
 
 # ==========================================
 # 4. الجزء الثالث: قالب السؤال والتلميح...........     
