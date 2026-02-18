@@ -1053,6 +1053,10 @@ async def handle_secure_actions(c: types.CallbackQuery):
             await show_quizzes(c)
             return
             
+    except Exception as e:
+        logging.error(f"Error in Secure Logic: {e}")
+       await c.answer("🚨 حدث خطأ أثناء تنفيذ الإجراء")
+
 # ==========================================
 # 3. نظام المحركات الثلاثة المنفصلة (ياسر المطور)
 # ==========================================
