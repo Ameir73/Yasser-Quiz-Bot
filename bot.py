@@ -1049,40 +1049,47 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
         # 1. التمييز الذكي (بوت أو أعضاء)
         is_bot = quiz_data.get('is_bot_quiz', False)
+        cat_ids = [int(c) for c in quiz_data.get('cats', []) if str(c).isdigit()]
         
-        # 2. تحديد الأقسام (تحويل الأرقام)
-        cat_ids = [int(c) for c in quiz_data['cats'] if str(c).isdigit()]
         if not cat_ids:
-            await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
-            return
+            return await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
 
-        # 3. جلب الأسئلة بناءً على الهوية
+        # 2. جلب البيانات بناءً على الجدول المختار
         if is_bot:
-            # مسار أسئلة البوت (جدولك المرفوع)
+            # مسار أسئلة البوت (جدول bot_questions)
             res = supabase.table("bot_questions") \
                 .select("*") \
                 .in_("bot_category_id", cat_ids) \
-                .limit(int(quiz_data['questions_count'])) \
+                .limit(int(quiz_data.get('questions_count', 10))) \
                 .execute()
+            cat_name_display = "أسئلة البوت"
         else:
-            # مسار أسئلة الأعضاء (كودك الأصلي)
+            # مسار أسئلة الأعضاء (جدول questions مع ربط الأقسام)
             res = supabase.table("questions") \
                 .select("*, categories(name)") \
                 .in_("category_id", cat_ids) \
-                .limit(int(quiz_data['questions_count'])) \
+                .limit(int(quiz_data.get('questions_count', 10))) \
                 .execute()
-        
+            cat_name_display = "قسم خاص"
+
         questions = res.data
         if not questions:
-            await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة كافية في هذا المسار حالياً.")
-            return
+            return await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة كافية في {'جدول البوت' if is_bot else 'أقسامك الخاصة'}.")
 
-        # تكملة الكود (random.shuffle و حلقة الأسئلة
+        random.shuffle(questions)
+        overall_scores = {}
+
+        # 3. حلقة الأسئلة المرنة (تقرأ من الجدولين)
         for i, q in enumerate(questions):
-            # دعم كل مسميات الأعمدة (قديم وجديد) لضمان عدم التعطل
-            q_text = q.get('question_content') or q.get('question_text') or 'نص السؤال مفقود'
+            # دعم مسميات الأعمدة المختلفة (CSV والجدول القديم)
+            q_text = q.get('question_content') or q.get('question_text') or '⚠️ نص السؤال مفقود'
             ans = str(q.get('correct_answer') or q.get('answer_text') or "").strip()
-            cat_name = q.get('category') or "عام"
+            
+            # جلب اسم القسم بذكاء
+            if not is_bot and q.get('categories'):
+                current_cat = q['categories'].get('name', cat_name_display)
+            else:
+                current_cat = q.get('category') or cat_name_display
 
             active_quizzes[chat_id] = {
                 "active": True, 
@@ -1092,15 +1099,16 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                 "hint_sent": False
             }
             
-            # إرسال السؤال عبر قالبك الفخم
+            # إرسال السؤال عبر القالب
             settings = {
                 'owner_name': owner_name, 
                 'mode': quiz_data['mode'], 
                 'time_limit': quiz_data['time_limit'], 
-                'cat_name': cat_name
+                'cat_name': current_cat
             }
             await send_quiz_question(chat_id, q, i+1, len(questions), settings)
             
+            # منطق مؤقت السؤال
             start_time = time.time()
             time_limit = int(quiz_data['time_limit'])
             
@@ -1108,7 +1116,7 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                 await asyncio.sleep(0.1)
                 if not active_quizzes[chat_id]['active']: break
                 
-                # منطق التلميح الطائر الذكي
+                # التلميح الذكي
                 if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                     if (time.time() - start_time) >= (time_limit / 2):
                         hint_text = await generate_smart_hint(ans)
@@ -1124,18 +1132,15 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                     overall_scores[uid] = {"name": w['name'], "points": 0}
                 overall_scores[uid]['points'] += 10
             
-            # عرض نتائج السؤال الحالي
             await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
             await asyncio.sleep(2)
 
-        # النتائج النهائية للمسابقة
+        # النتائج النهائية
         await send_final_results(chat_id, overall_scores, len(questions))
 
     except Exception as e:
         import logging
-        logging.error(f"Engine Error: {e}")
-        print(f"🔥 خطأ في المحرك: {e}")
-            
+        logging.error(f"Engine Critical Error: {e}")
                 
 # ==========================================
 # 4. الجزء الثالث: قالب السؤال والتلميح...........     
