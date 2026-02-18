@@ -1073,7 +1073,9 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     )
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
 
-# --- 1. تعريف المخزن المؤقت في المحرك 
+# ========================================
+# 👑   محرك تشغيل المسابقة (مع التلميحات )
+# ========================================
 
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
@@ -1088,7 +1090,15 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
         if is_bot:
             source_label = "أسئلة البوت 🤖"
-            cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
+            # تحويل الأقسام المختارة لضمان مطابقتها لملفاتك (Integer)
+            import json
+            if isinstance(selected_cats, str):
+                try: cat_ids = json.loads(selected_cats)
+                except: cat_ids = []
+            else:
+                cat_ids = selected_cats
+            
+            cat_ids = [int(c) for c in cat_ids if str(c).isdigit()]
             
             if cat_ids:
                 res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).execute()
@@ -1123,14 +1133,12 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         overall_scores = {}
 
         for i, q in enumerate(questions):
-            # --- [ التعديل الملكي لجلب البيانات من ملفات ياسر ] ---
+            # جلب البيانات من ملفات ياسر (question_content, correct_answer)
             q_text = q.get('question_content') or q.get('question') or q.get('text')
             ans = q.get('correct_answer') or q.get('answer')
             cat_name = q.get('category') or "عام"
             
-            if not q_text or not ans: 
-                print(f"⚠️ سؤال ناقص البيانات في القسم {cat_name}: {q}")
-                continue 
+            if not q_text or not ans: continue 
 
             # تحديث حالة المسابقة
             active_quizzes[chat_id] = {
@@ -1148,13 +1156,26 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
                 'cat_name': cat_name
             }
 
-            # إرسال السؤال (هذا السطر يستدعي قالب الأسئلة)
+            # إرسال السؤال
             await send_quiz_question(chat_id, {'question_text': q_text}, i+1, len(questions), settings)
             
-            # انتظار وقت السؤال
+            # --- [ دورة الوقت مع نظام التلميحات ] ---
             start_time = time.time()
+            # إرسال التلميح عند مرور 50% من الوقت
+            hint_trigger_time = settings['time_limit'] / 2 
+            
             while time.time() - start_time < settings['time_limit']:
                 await asyncio.sleep(0.5)
+                
+                # فحص إرسال التلميح
+                elapsed = time.time() - start_time
+                if elapsed >= hint_trigger_time and not active_quizzes[chat_id]['hint_sent']:
+                    clean_ans = str(ans).strip()
+                    if len(clean_ans) > 2:
+                        hint_msg = f"💡 <b>تلميح:</b> الإجابة تبدأ بـ ( <code>{clean_ans[:2]}...</code> )"
+                        await bot.send_message(chat_id, hint_msg, parse_mode="HTML")
+                        active_quizzes[chat_id]['hint_sent'] = True
+
                 if not active_quizzes[chat_id]['active']: break 
 
             active_quizzes[chat_id].update({"active": False})
