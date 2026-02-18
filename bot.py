@@ -1110,8 +1110,25 @@ async def delete_after(msg, delay):
     await asyncio.sleep(delay)
     try: await msg.delete()
     except: pass
+
+# ----رصد الإجابات (Answers)----
+
+@dp.message_handler(lambda m: not m.text.startswith('/'))
+async def check_ans(m: types.Message):
+    cid = m.chat.id
+    if cid in active_quizzes and active_quizzes[cid]['active']:
+        user_ans = m.text.strip().lower()
+        correct_ans = active_quizzes[cid]['ans'].lower()
         
+        if user_ans == correct_ans:
+            if not any(w['id'] == m.from_user.id for w in active_quizzes[cid]['winners']):
+                active_quizzes[cid]['winners'].append({"name": m.from_user.first_name, "id": m.from_user.id})
+                
+                if active_quizzes[cid]['mode'] == 'السرعة ⚡':
+                    active_quizzes[cid]['active'] = False # تم إصلاح الخطأ هنا
+                    
 # =========================================
+#          ......لوحة المشرف......
 #==========================================
 
 @dp.message_handler(commands=['admin'], user_id=ADMIN_ID)
