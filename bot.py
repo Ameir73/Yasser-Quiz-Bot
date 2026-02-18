@@ -1075,9 +1075,11 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
         f"❓ **السؤال:**\n**{q_text}**"
     )
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
+
 # ==========================================
 # ==========================================
- async def start_quiz_engine(chat_id, quiz_data, owner_name):
+
+async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
         # تحديد الجداول والشركاء بناءً على نوع المسابقة (بدون بعسسة في الهيكل)
         is_bot = quiz_data.get('is_bot_quiz', False)
