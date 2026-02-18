@@ -1099,17 +1099,34 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 
         # 2. جلب الأسئلة
         if is_bot:
+            import json
             source_label = "أسئلة البوت 🤖"
-            cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
-            res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).execute()
-            if res.data:
-                import random
-                questions = random.sample(res.data, min(len(res.data), q_count))
-        else:
-            cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
-            res = supabase.table("questions").select("*").in_("category_id", cat_ids).limit(q_count).execute()
-            questions = res.data
+            
+            # تحويل النص القادم ["14","13"] إلى قائمة حقيقية
+            try:
+                if isinstance(selected_cats, str):
+                    # تحويل النص إلى قائمة ['14', '13']
+                    cat_list = json.loads(selected_cats)
+                else:
+                    cat_list = selected_cats
+                
+                # الخطوة الأهم: تحويل '14' (نص) إلى 14 (رقم)
+                cat_ids = [int(c) for c in cat_list if str(c).isdigit()]
+            except Exception as e:
+                print(f"❌ خطأ في معالجة الأقسام: {e}")
+                cat_ids = []
 
+            if cat_ids:
+                # الطلب من سوبابيز باستخدام قائمة الأرقام الصافية
+                res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).execute()
+                if res.data:
+                    import random
+                    questions = random.sample(res.data, min(len(res.data), q_count))
+            else:
+                # جلب عشوائي لو فشل كل ما سبق
+                res = supabase.table("bot_questions").select("*").limit(q_count).execute()
+                questions = res.data
+                
         if not questions:
             await bot.send_message(chat_id, "⚠️ المصدر المختار فارغ حالياً.")
             return
