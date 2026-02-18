@@ -1061,6 +1061,9 @@ async def generate_smart_hint(answer_text):
             return f"💡 {len(words)} كلمات، تبدأ بـ ( {answer_text[:2]} )"
 
 async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
+    # استخدام .get() يمنع الكود من الانهيار إذا اختلف اسم العمود
+    q_text = q_data.get('question_text') or q_data.get('question_content') or "نص السؤال مفقود"
+    
     text = (
         f"🎓 **الـمنـظـم:** {settings['owner_name']} ☁️☁️\n"
         f"┏━━━━━━━━━━━━━━┓\n"
@@ -1069,10 +1072,9 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
         f"  🚀 **سرعة:** {settings['mode']} 🚀\n"
         f"  ⏳ **المهلة:** {settings['time_limit']} ثانية ⏳\n"
         f"┗━━━━━━━━━━━━━━┛\n\n"
-        f"❓ **السؤال:**\n**{q_data['question_text']}**"
+        f"❓ **السؤال:**\n**{q_text}**"
     )
     return await bot.send_message(chat_id, text, parse_mode='Markdown')
-
 # ========================================
 # 👑   محرك تشغيل المسابقة (مع التلميحات )
 # ========================================
