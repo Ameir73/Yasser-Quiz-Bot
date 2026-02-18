@@ -994,18 +994,18 @@ async def handle_secure_actions(c: types.CallbackQuery):
             await c.answer(msg)
             await handle_secure_actions(c) 
             return
-        # --- [ نظام التشغيل والحذف ] ---
+        # --- [ نظام التشغيل المطور بالثلاثة محركات - ياسر ] ---
         if c.data.startswith('run_'):
             await c.answer("🚀 جارٍ بدء المسابقة..")
             quiz_id = data_parts[1]
             
-            # جلب إعدادات المسابقة
+            # جلب إعدادات المسابقة من قاعدة البيانات
             res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
             q_data = res.data
             if not q_data: 
                 return await c.answer("❌ مسابقة غير موجودة", show_alert=True)
 
-            # تجهيز الإعدادات ونقلها للمحرك
+            # تجهيز الإعدادات الموحدة ونقلها للمحرك
             quiz_config = {
                 'cats': q_data.get('cats') or [],
                 'questions_count': int(q_data.get('questions_count', 10)),
@@ -1013,12 +1013,27 @@ async def handle_secure_actions(c: types.CallbackQuery):
                 'mode': q_data.get('mode', 'السرعة ⚡'),
                 'quiz_name': q_data.get('quiz_name', 'مسابقة'),
                 'smart_hint': q_data.get('smart_hint', False),
-                'is_bot_quiz': True  # دائماً True للمسابقات المرفوعة عبر CSV
+                # استخراج الأنواع لضمان توجيهها للمحرك الصحيح
+                'is_bot_quiz': q_data.get('is_bot_quiz', False),
+                'is_private': q_data.get('is_private', False)
             }
             
+            # بدء العد التنازلي
             await countdown_timer(c.message, 5)
             await c.message.edit_text(f"🏁 **انطلقت الآن: {quiz_config['quiz_name']}**")
-            await start_quiz_engine(c.message.chat.id, quiz_config, c.from_user.first_name)
+
+            # 🚥 الموزع الذكي للمحركات الثلاثة
+            if quiz_config['is_bot_quiz']:
+                # 1. استدعاء محرك البوت (للتاريخ والملفات المرفوعة CSV)
+                await engine_bot_questions(c.message.chat.id, quiz_config, c.from_user.first_name)
+            
+            elif quiz_config['is_private']:
+                # 2. استدعاء محرك الأقسام الخاصة
+                await engine_private_questions(c.message.chat.id, quiz_config, c.from_user.first_name)
+            
+            else:
+                # 3. استدعاء محرك الأعضاء والأقسام العامة
+                await engine_user_questions(c.message.chat.id, quiz_config, c.from_user.first_name)
             return
 
         elif c.data.startswith('confirm_del_'):
@@ -1034,12 +1049,9 @@ async def handle_secure_actions(c: types.CallbackQuery):
             quiz_id = data_parts[2]
             supabase.table("saved_quizzes").delete().eq("id", quiz_id).execute()
             await c.answer("🗑️ تم الحذف بنجاح")
+            # استدعاء دالة عرض القائمة بعد الحذف
             await show_quizzes(c)
             return
-
-    except Exception as e:
-        logging.error(f"Error in Secure Logic: {e}")
-        await c.answer("🚨 حدث خطأ أثناء تنفيذ الإجراء")
             
 # ==========================================
 # 3. نظام المحركات الثلاثة المنفصلة (ياسر المطور)
