@@ -994,18 +994,15 @@ async def handle_secure_actions(c: types.CallbackQuery):
             await c.answer(msg)
             await handle_secure_actions(c) 
             return
-        # --- [ نظام التشغيل المطور بالثلاثة محركات - ياسر ] ---
+        # --- [ نظام التشغيل المطور ] ---
         if c.data.startswith('run_'):
             await c.answer("🚀 جارٍ بدء المسابقة..")
             quiz_id = data_parts[1]
             
-            # جلب إعدادات المسابقة من قاعدة البيانات
             res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
             q_data = res.data
-            if not q_data: 
-                return await c.answer("❌ مسابقة غير موجودة", show_alert=True)
+            if not q_data: return
 
-            # تجهيز الإعدادات الموحدة ونقلها للمحرك
             quiz_config = {
                 'cats': q_data.get('cats') or [],
                 'questions_count': int(q_data.get('questions_count', 10)),
@@ -1013,26 +1010,18 @@ async def handle_secure_actions(c: types.CallbackQuery):
                 'mode': q_data.get('mode', 'السرعة ⚡'),
                 'quiz_name': q_data.get('quiz_name', 'مسابقة'),
                 'smart_hint': q_data.get('smart_hint', False),
-                # استخراج الأنواع لضمان توجيهها للمحرك الصحيح
                 'is_bot_quiz': q_data.get('is_bot_quiz', False),
                 'is_private': q_data.get('is_private', False)
             }
             
-            # بدء العد التنازلي
             await countdown_timer(c.message, 5)
-            await c.message.edit_text(f"🏁 **انطلقت الآن: {quiz_config['quiz_name']}**")
-
-            # 🚥 الموزع الذكي للمحركات الثلاثة
-            if quiz_config['is_bot_quiz']:
-                # 1. استدعاء محرك البوت (للتاريخ والملفات المرفوعة CSV)
+            
+            # 🚦 التوجيه الصحيح (يجب أن يكون هنا داخل الدالة)
+            if quiz_config.get('is_bot_quiz'):
                 await engine_bot_questions(c.message.chat.id, quiz_config, c.from_user.first_name)
-            
-            elif quiz_config['is_private']:
-                # 2. استدعاء محرك الأقسام الخاصة
+            elif quiz_config.get('is_private'):
                 await engine_private_questions(c.message.chat.id, quiz_config, c.from_user.first_name)
-            
             else:
-                # 3. استدعاء محرك الأعضاء والأقسام العامة
                 await engine_user_questions(c.message.chat.id, quiz_config, c.from_user.first_name)
             return
 
@@ -1158,16 +1147,6 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
 
     # استدعاء النتائج النهائية
     await send_final_results(chat_id, overall_scores, len(questions))
-# فحص نوع المسابقة قبل النداء
-if quiz_config.get('is_bot_quiz'):
-    # محرك البوت (التاريخ)
-    await engine_bot_questions(chat_id, quiz_config, user_name)
-elif quiz_config.get('is_private_section'):
-    # محرك الأقسام الخاصة
-    await engine_private_questions(chat_id, quiz_config, user_name)
-else:
-    # محرك الأعضاء العام
-    await engine_user_questions(chat_id, quiz_config, user_name)
 
 # ==========================================
 # 4. الجزء الثالث: قالب السؤال والتلميح...........     
