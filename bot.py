@@ -996,55 +996,40 @@ async def handle_secure_actions(c: types.CallbackQuery):
             await handle_secure_actions(c) 
             return
 
-        # --- نظام الرجوع والحذف والتشغيل ---
-        if c.data.startswith('back_to_list'):
-            await show_quizzes(c)
-            return
+# --- [ نظام التشغيل والحذف ] ---
+if c.data.startswith('run_'):
+    await c.answer("🚀 جارٍ بدء المسابقة..")
+    quiz_id = data_parts[1]
+    
+    # جلب إعدادات المسابقة
+    res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
+    q_data = res.data
+    if not q_data: return await c.answer("❌ مسابقة غير موجودة", show_alert=True)
 
-        if c.data.startswith('run_'):
-            await c.answer("🚀 جارٍ بدء المسابقة..")
-            quiz_id = data_parts[1]
-            res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
-            q_data = res.data
-            await countdown_timer(c.message, 5)
-            quiz_config = {
-                'cats': q_data.get('cats') or [],
-                'questions_count': int(q_data.get('questions_count', 10)),
-                'time_limit': int(q_data.get('time_limit', 15)),
-                'mode': q_data.get('mode', 'السرعة ⚡'),
-                'quiz_name': q_data.get('quiz_name', 'مسابقة'),
-                'smart_hint': q_data.get('smart_hint', False) # إضافة حالة التلميح للإعدادات المشغلة
-            }
-            await c.message.edit_text(f"🏁 **انطلقت الآن: {quiz_config['quiz_name']}**")
-            await start_quiz_engine(c.message.chat.id, quiz_config, c.from_user.first_name)
-            return
+    # تجهيز الإعدادات ونقلها للمحرك
+    quiz_config = {
+        'cats': q_data.get('cats') or [],
+        'questions_count': int(q_data.get('questions_count', 10)),
+        'time_limit': int(q_data.get('time_limit', 15)),
+        'mode': q_data.get('mode', 'السرعة ⚡'),
+        'quiz_name': q_data.get('quiz_name', 'مسابقة'),
+        'smart_hint': q_data.get('smart_hint', False),
+        'is_bot_quiz': True  # دائماً True للمسابقات المرفوعة عبر CSV
+    }
+    
+    await countdown_timer(c.message, 5)
+    await c.message.edit_text(f"🏁 **انطلقت الآن: {quiz_config['quiz_name']}**")
+    await start_quiz_engine(c.message.chat.id, quiz_config, c.from_user.first_name)
+    return
 
-        if c.data.startswith('confirm_del_'):
-            quiz_id = data_parts[2]
-            kb = InlineKeyboardMarkup(row_width=2).add(
-                InlineKeyboardButton("✅ نعم، احذف", callback_data=f"final_del_{quiz_id}_{user_id}"),
-                InlineKeyboardButton("🚫 تراجع", callback_data=f"quiz_settings_{quiz_id}_{user_id}")
-            )
-            await c.message.edit_text("⚠️ **تنبيه: هل أنت متأكد من حذف هذه المسابقة نهائياً؟**", reply_markup=kb)
-            return
-
-        if c.data.startswith('final_del_'):
-            supabase.table("saved_quizzes").delete().eq("id", data_parts[2]).execute()
-            await c.answer("🗑️ تم الحذف بنجاح")
-            await show_quizzes(c)
-            return
-
-        if "close" in c.data:
-            await c.message.delete()
-            return
-
-        if "bot_dev_msg" in c.data:
-            await c.answer("🚧 قيد التطوير يا بطل!", show_alert=True)
-            return
-
-    except Exception as e:
-        logging.error(f"Error in Secure Logic: {e}")
-                                                        
+elif c.data.startswith('confirm_del_'):
+    quiz_id = data_parts[2]
+    kb = InlineKeyboardMarkup(row_width=2).add(
+        InlineKeyboardButton("✅ نعم، احذف", callback_data=f"final_del_{quiz_id}_{user_id}"),
+        InlineKeyboardButton("🚫 تراجع", callback_data=f"quiz_settings_{quiz_id}_{user_id}")
+    )
+    await c.message.edit_text("⚠️ **هل أنت متأكد من الحذف نهائياً؟**", reply_markup=kb)
+    
 # ==========================================
 # 2. محركات التصميم والزخرفة والتلميح (نسخة الإشعارات العلوية الطائرة)
 # ==========================================
