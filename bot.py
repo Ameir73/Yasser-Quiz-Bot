@@ -1045,107 +1045,43 @@ async def handle_secure_actions(c: types.CallbackQuery):
 # ==========================================
 # 2. محركات التشغيل والزخرفة والتلميح (نسخة الإشعارات العلوية الطائرة)
 # ==========================================
-async def start_quiz_engine(chat_id, quiz_data, owner_name):
+async def engine_bot_questions(chat_id, quiz_data, owner_name):
     try:
-        # 1. التمييز الذكي (بوت أو أعضاء)
-        is_bot = quiz_data.get('is_bot_quiz', False)
-        cat_ids = [int(c) for c in quiz_data.get('cats', []) if str(c).isdigit()]
-        
-        if not cat_ids:
-            return await bot.send_message(chat_id, "⚠️ خطأ: لم يتم تحديد أقسام لهذه المسابقة.")
-
-        # 2. جلب البيانات بناءً على الجدول المختار
-        if is_bot:
-            # مسار أسئلة البوت (جدولك المرفوع CSV)
-            res = supabase.table("bot_questions") \
-                .select("*") \
-                .in_("bot_category_id", cat_ids) \
-                .limit(int(quiz_data.get('questions_count', 10))) \
-                .execute()
-            cat_name_display = "أسئلة البوت 🤖"
-        else:
-            # مسار أسئلة الأعضاء (الجدول القديم مع ربط الأقسام)
-            res = supabase.table("questions") \
-                .select("*, categories(name)") \
-                .in_("category_id", cat_ids) \
-                .limit(int(quiz_data.get('questions_count', 10))) \
-                .execute()
-            cat_name_display = "قسم خاص 👥"
-
-        questions = res.data
-        if not questions:
-            return await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة كافية في {'جدول البوت' if is_bot else 'أقسامك الخاصة'}.")
-
-        random.shuffle(questions)
-        overall_scores = {}
-
-        # 3. حلقة الأسئلة المرنة (تقرأ من الجدولين)
-        for i, q in enumerate(questions):
-            # دعم كل مسميات الأعمدة (question_content لجدولك و question_text للأعضاء)
-            q_text = q.get('question_content') or q.get('question_text') or '⚠️ نص السؤال مفقود'
-            ans = str(q.get('correct_answer') or q.get('answer_text') or "").strip()
-            
-            # جلب اسم القسم بذكاء (من جدول categories للأعضاء أو مباشر للبوت)
-            if not is_bot and q.get('categories'):
-                current_cat = q['categories'].get('name', cat_name_display)
-            else:
-                current_cat = q.get('category') or cat_name_display
-
-            active_quizzes[chat_id] = {
-                "active": True, 
-                "ans": ans, 
-                "winners": [], 
-                "mode": quiz_data['mode'], 
-                "hint_sent": False
-            }
-            
-            # إرسال السؤال عبر القالب الفخم
-            settings = {
-                'owner_name': owner_name, 
-                'mode': quiz_data['mode'], 
-                'time_limit': quiz_data['time_limit'], 
-                'cat_name': current_cat
-            }
-            await send_quiz_question(chat_id, q, i+1, len(questions), settings)
-            
-            # مؤقت السؤال
-            start_time = time.time()
-            time_limit = int(quiz_data['time_limit'])
-            
-            while time.time() - start_time < time_limit:
-                await asyncio.sleep(0.1)
-                if not active_quizzes[chat_id]['active']: break
-                
-                # التلميح الذكي
-                if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
-                    if (time.time() - start_time) >= (time_limit / 2):
-                        hint_text = await generate_smart_hint(ans)
-                        hint_msg = await bot.send_message(chat_id, hint_text, parse_mode="HTML")
-                        active_quizzes[chat_id]['hint_sent'] = True
-                        asyncio.create_task(delete_after(hint_msg, 5))
-
-            # إنهاء السؤال وتوزيع النقاط
-            active_quizzes[chat_id]['active'] = False
-            for w in active_quizzes[chat_id]['winners']:
-                uid = w['id']
-                if uid not in overall_scores:
-                    overall_scores[uid] = {"name": w['name'], "points": 0}
-                overall_scores[uid]['points'] += 10 
-            
-            await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
-            await asyncio.sleep(2)
-
-        # النتائج النهائية
-        await send_final_results(chat_id, overall_scores, len(questions))
-
+        cat_ids = [int(c) for c in quiz_data['cats'] if str(c).isdigit()]
+        res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).limit(int(quiz_data['questions_count'])).execute()
+        if not res.data:
+            return await bot.send_message(chat_id, "⚠️ لم أجد أسئلة في جدول البوت العام.")
+        await run_universal_logic(chat_id, res.data, quiz_data, owner_name, "bot")
     except Exception as e:
-        import logging
-        logging.error(f"Engine Error: {e}")
-        
+        logging.error(f"Bot Engine Error: {e}")
+
+# 2. محرك أسئلة الأعضاء (جدول questions - الأقسام العامة)
+async def engine_user_questions(chat_id, quiz_data, owner_name):
+    try:
+        cat_ids = [int(c) for c in quiz_data['cats'] if str(c).isdigit()]
+        res = supabase.table("questions").select("*, categories(name)").in_("category_id", cat_ids).limit(int(quiz_data['questions_count'])).execute()
+        if not res.data:
+            return await bot.send_message(chat_id, "⚠️ لم أجد أسئلة في أقسام الأعضاء العامة.")
+        await run_universal_logic(chat_id, res.data, quiz_data, owner_name, "user")
+    except Exception as e:
+        logging.error(f"User Engine Error: {e}")
+
+# 3. محرك الأقسام الخاصة (جدول private_questions - إذا وجد أو مخصص)
+async def engine_private_questions(chat_id, quiz_data, owner_name):
+    try:
+        cat_ids = [int(c) for c in quiz_data['cats'] if str(c).isdigit()]
+        # ملاحظة: تأكد من مسمى الجدول والعمود في سوبابيز لديك
+        res = supabase.table("private_questions").select("*").in_("category_id", cat_ids).limit(int(quiz_data['questions_count'])).execute()
+        if not res.data:
+            return await bot.send_message(chat_id, "⚠️ لم أجد أسئلة في الأقسام الخاصة.")
+        await run_universal_logic(chat_id, res.data, quiz_data, owner_name, "private")
+    except Exception as e:
+        logging.error(f"Private Engine Error: {e}")
+
 # ==========================================
 # 4. الجزء الثالث: قالب السؤال والتلميح...........     
 # ==========================================
-# ضعه هنا ليكون مرئياً للجميع
+
 async def countdown_timer(message: types.Message, seconds=5):
     try:
         for i in range(seconds, 0, -1):
