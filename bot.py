@@ -1076,59 +1076,50 @@ async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
 # ========================================
 # 👑   محرك تشغيل المسابقة (مع التلميحات )
 # ========================================
-
 async def start_quiz_engine(chat_id, quiz_data, owner_name):
     try:
-        # استخراج الإعدادات الأساسية
+        # 1. تجهيز الإعدادات الأساسية
         quiz_title = quiz_data.get('quiz_name') or "مسابقة جديدة"
-        selected_cats = quiz_data.get('cats', [])
         q_count = int(quiz_data.get('questions_count', 10))
         is_bot = quiz_data.get('is_bot_quiz', False)
+        
+        # معالجة الأقسام (JSON) لضمان قراءة ملفات saved_quizzes بشكل صحيح
+        import json
+        raw_cats = quiz_data.get('cats', [])
+        if isinstance(raw_cats, str):
+            try:
+                selected_cats = json.loads(raw_cats)
+            except:
+                selected_cats = []
+        else:
+            selected_cats = raw_cats
 
         questions = []
-        source_label = "أقسام الأعضاء 👤" 
+        source_label = "أقسام الأعضاء 👤"
 
+        # 2. جلب الأسئلة
         if is_bot:
             source_label = "أسئلة البوت 🤖"
-            # تحويل الأقسام المختارة لضمان مطابقتها لملفاتك (Integer)
-            import json
-            if isinstance(selected_cats, str):
-                try: cat_ids = json.loads(selected_cats)
-                except: cat_ids = []
-            else:
-                cat_ids = selected_cats
-            
-            cat_ids = [int(c) for c in cat_ids if str(c).isdigit()]
-            
-            if cat_ids:
-                res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).execute()
-            else:
-                res = supabase.table("bot_questions").select("*").limit(100).execute()
-            
-            if res.data and len(res.data) > 0:
+            cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
+            res = supabase.table("bot_questions").select("*").in_("bot_category_id", cat_ids).execute()
+            if res.data:
                 import random
-                all_fetched = res.data
-                questions = random.sample(all_fetched, min(len(all_fetched), q_count))
-            else:
-                res = supabase.table("bot_questions").select("*").in_("category", selected_cats).limit(q_count).execute()
-                questions = res.data
+                questions = random.sample(res.data, min(len(res.data), q_count))
         else:
             cat_ids = [int(c) for c in selected_cats if str(c).isdigit()]
-            if cat_ids:
-                res = supabase.table("questions").select("*").in_("category_id", cat_ids).limit(q_count).execute()
-                questions = res.data
-            else:
-                res = supabase.table("questions").select("*").limit(q_count).execute()
-                questions = res.data
+            res = supabase.table("questions").select("*").in_("category_id", cat_ids).limit(q_count).execute()
+            questions = res.data
 
         if not questions:
             await bot.send_message(chat_id, "⚠️ المصدر المختار فارغ حالياً.")
             return
 
+        # 3. إعلان الانطلاق
         import random
         random.shuffle(questions)
         await bot.send_message(chat_id, f"🎯 **انطلقت الآن: {quiz_title}**\n📂 المصدر: {source_label}\n🔢 الأسئلة: {len(questions)}")
         await asyncio.sleep(2)
+
 
         overall_scores = {}
 
