@@ -1116,17 +1116,32 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
         t_categories = "bot_categories" if is_bot else "categories"
         f_key = "bot_category_id" if is_bot else "category_id"
 
-        # 3. جلب الأسئلة
-        res = supabase.table(t_questions).select(f"*, {t_categories}(name)")\
-            .in_(f_key, cat_ids)\
-            .limit(int(quiz_data.get('questions_count', 10)))\
-            .execute()
-        
-        questions = res.data
-        
-        # إذا كانت القائمة فارغة هنا تظهر الرسالة التي أزعجتك
-        if not questions:
-            await bot.send_message(chat_id, "⚠️ لم أجد أسئلة كافية في هذه الأقسام حالياً.")
+                # --- [ بداية قسم رؤية الخطأ وجلب الأسئلة - ياسر الملك ] ---
+        print(f"🔍 فحص المسابقة: جدول الأسئلة={t_questions} | العمود={f_key} | الأقسام={cat_ids}")
+
+        try:
+            # محاولة جلب الأسئلة
+            res = supabase.table(t_questions).select("*")\
+                .in_(f_key, cat_ids)\
+                .limit(int(quiz_data.get('questions_count', 10)))\
+                .execute()
+            
+            questions = res.data
+            
+            # 1. إذا رجعت القائمة فارغة
+            if not questions:
+                # هذا السطر سيطبع لك السبب في الكونسول (Terminal)
+                print(f"❌ خطأ: لم يعثر على أسئلة! تأكد أن جدول {t_questions} يحتوي على {f_key} بقيم {cat_ids}")
+                await bot.send_message(chat_id, f"⚠️ لم أجد أسئلة كافية.\nالجدول: {t_questions}\nالأقسام: {cat_ids}")
+                return
+
+            # 2. إذا نجح الجلب
+            print(f"✅ نجاح! تم العثور على {len(questions)} سؤال.")
+
+        except Exception as e:
+            # رؤية الخطأ البرمجي لو انهار الطلب
+            print(f"🔥 خطأ برمي في سوبابيز: {str(e)}")
+            await bot.send_message(chat_id, f"🚨 حدث خطأ فني:\n{str(e)}")
             return
 
         # 4. انطلاق المسابقة (بقية الكود الخاص بك بدون تغيير)
