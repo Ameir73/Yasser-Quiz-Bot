@@ -1078,6 +1078,65 @@ async def engine_private_questions(chat_id, quiz_data, owner_name):
     except Exception as e:
         logging.error(f"Private Engine Error: {e}")
 
+async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_type):
+    random.shuffle(questions)
+    overall_scores = {}
+
+    for i, q in enumerate(questions):
+        # --- [تحديد المسميات حسب نوع المحرك] ---
+        if engine_type == "bot":
+            q_text = q.get('question_content') or '⚠️ نص مفقود'
+            ans = str(q.get('correct_answer') or "").strip()
+            cat_name = q.get('category') or "بوت"
+        elif engine_type == "user":
+            q_text = q.get('question_text') or q.get('question_content') or '⚠️ نص مفقود'
+            ans = str(q.get('answer_text') or q.get('correct_answer') or "").strip()
+            cat_name = q['categories']['name'] if q.get('categories') else "عام"
+        else: # private
+            q_text = q.get('question_content') or q.get('text')
+            ans = str(q.get('correct_answer') or q.get('ans') or "").strip()
+            cat_name = "قسم خاص 🔒"
+
+        # إعداد حالة المسابقة
+        active_quizzes[chat_id] = {
+            "active": True, "ans": ans, "winners": [], 
+            "mode": quiz_data['mode'], "hint_sent": False
+        }
+        
+        # إرسال السؤال (باستخدام دالة الإرسال في ملفك الشغال)
+        await send_quiz_question(chat_id, q, i+1, len(questions), {
+            'owner_name': owner_name, 'mode': quiz_data['mode'], 
+            'time_limit': quiz_data['time_limit'], 'cat_name': cat_name
+        })
+        
+        # منطق التوقيت والتلميح الذكي
+        start_time = time.time()
+        t_limit = int(quiz_data['time_limit'])
+        while time.time() - start_time < t_limit:
+            await asyncio.sleep(0.1)
+            if not active_quizzes[chat_id]['active']: break
+            
+            # التلميح في منتصف الوقت
+            if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
+                if (time.time() - start_time) >= (t_limit / 2):
+                    hint = await generate_smart_hint(ans)
+                    h_msg = await bot.send_message(chat_id, hint, parse_mode="HTML")
+                    active_quizzes[chat_id]['hint_sent'] = True
+                    asyncio.create_task(delete_after(h_msg, 5))
+
+        active_quizzes[chat_id]['active'] = False
+        # توزيع النقاط وإظهار النتائج المرحلية
+        for w in active_quizzes[chat_id]['winners']:
+            uid = w['id']
+            if uid not in overall_scores: overall_scores[uid] = {"name": w['name'], "points": 0}
+            overall_scores[uid]['points'] += 10
+        
+        await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
+        await asyncio.sleep(2)
+
+    # النتائج النهائية
+    await send_final_results(chat_id, overall_scores, len(questions))
+
 # ==========================================
 # 4. الجزء الثالث: قالب السؤال والتلميح...........     
 # ==========================================
