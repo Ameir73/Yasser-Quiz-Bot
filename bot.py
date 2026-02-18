@@ -1103,6 +1103,16 @@ async def start_quiz_engine(chat_id, quiz_data, owner_name):
 # ==========================================
 # 4. الجزء الثالث: قالب السؤال والتلميح...........     
 # ==========================================
+# ضعه هنا ليكون مرئياً للجميع
+async def countdown_timer(message: types.Message, seconds=5):
+    try:
+        for i in range(seconds, 0, -1):
+            await message.edit_text(f"🚀 **تجهيز المسابقة...**\n\nستبدأ خلال: {i}")
+            await asyncio.sleep(1)
+    except Exception as e:
+        logging.error(f"Countdown Error: {e}")
+
+
 async def send_quiz_question(chat_id, q_data, current_num, total_num, settings):
     # دعم مسميات CSV الجديدة
     q_text = q_data.get('question_content') or q_data.get('question_text') or "نص مفقود"
@@ -1142,7 +1152,6 @@ async def check_ans(m: types.Message):
 # =========================================
 #          ......لوحة المشرف......
 #==========================================
-
 @dp.message_handler(commands=['admin'], user_id=ADMIN_ID)
 async def admin_dashboard(message: types.Message):
     res = supabase.table("allowed_groups").select("*").execute()
