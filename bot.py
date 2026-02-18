@@ -787,20 +787,21 @@ async def process_quiz_name(message: types.Message, state: FSMContext):
     # تحويل الأقسام لنص JSON نظيف (يمنع مشكلة الاقتباسات المزدوجة المكررة)
     cats_json = json.dumps(selected)
 
+    # ##########################################
+# التعديل النهائي لضمان الحفظ بدون علامات الهروب المكسورة \
     payload = {
-        "created_by": str(message.from_user.id),  # آيدي المستخدم (ياسر)
+        "created_by": str(message.from_user.id),
         "quiz_name": quiz_name,
-        "chat_id": str(message.from_user.id),     # ربط المسابقة بالمستخدم بدلاً من الشات
-        "is_public": True,                        # جعلها عامة لتظهر في المجموعات
+        "chat_id": str(message.from_user.id), 
+        "is_public": True, 
         "time_limit": data.get('quiz_time', 15),
         "questions_count": data.get('quiz_count', 10),
         "mode": data.get('quiz_mode', 'السرعة ⚡'),
         "hint_enabled": True if data.get('quiz_hint') == 'مفعل ✅' else False,
         "is_bot_quiz": data.get('is_bot_quiz', False),
-        "cats": cats_json                         # الحفظ بالصيغة النظيفة
+        "cats": selected  # أرسل 'selected' كما هي (List) ولا تستخدم json.dumps
     }
-    # نهاية التعديلات
-    # ##########################################
+# ##########################################
 
     try:
         supabase.table("saved_quizzes").insert(payload).execute()
