@@ -1052,10 +1052,17 @@ async def handle_secure_actions(c: types.CallbackQuery):
             # استدعاء دالة عرض القائمة بعد الحذف
             await show_quizzes(c)
             return
-            
+
+        elif c.data.startswith('final_del_'):
+            quiz_id = data_parts[2]
+            supabase.table("saved_quizzes").delete().eq("id", quiz_id).execute()
+            await c.answer("🗑️ تم الحذف بنجاح")
+            await show_quizzes(c)
+            return
+
     except Exception as e:
         logging.error(f"Error in Secure Logic: {e}")
-       await c.answer("🚨 حدث خطأ أثناء تنفيذ الإجراء")
+        await c.answer("🚨 حدث خطأ أثناء تنفيذ الإجراء")
 
 # ==========================================
 # 3. نظام المحركات الثلاثة المنفصلة (ياسر المطور)
