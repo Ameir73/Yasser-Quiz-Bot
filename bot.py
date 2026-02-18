@@ -21,6 +21,15 @@ MY_TELEGRAM_URL = "https://t.me/Ya_79k"
 ADMIN_ID = 7988144062
 # الربط بسوبابيس
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# --- [ 1. محرك العد التنازلي ] ---
+async def countdown_timer(message: types.Message, seconds=5):
+    try:
+        for i in range(seconds, 0, -1):
+            await message.edit_text(f"🚀 **تجهيز المسابقة...**\n\nستبدأ خلال: {i}")
+            await asyncio.sleep(1)
+    except Exception as e:
+        logging.error(f"Countdown Error: {e}")
+        
 
 # --- [ الخطوة 1: دالة فحص صلاحية المجموعة - بناء ياسر الاحترافي ] ---
 async def get_group_status(chat_id):
