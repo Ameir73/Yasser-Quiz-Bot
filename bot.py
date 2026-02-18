@@ -776,28 +776,39 @@ async def process_quiz_name(message: types.Message, state: FSMContext):
     quiz_name = message.text
     data = await state.get_data()
     selected = data.get('selected_cats', [])
+    
     if not selected:
         await message.answer("⚠️ خطأ: لم تختار أي قسم!")
         return
+
+    # ##########################################
+    # بداية التعديلات الملكية لضمان عمل أسئلة البوت
+    import json
+    # تحويل الأقسام لنص JSON نظيف (يمنع مشكلة الاقتباسات المزدوجة المكررة)
+    cats_json = json.dumps(selected)
+
     payload = {
-        "created_by": str(message.from_user.id),
+        "created_by": str(message.from_user.id),  # آيدي المستخدم (ياسر)
         "quiz_name": quiz_name,
-        "chat_id": str(message.chat.id),
-        "is_public": True if data.get('quiz_privacy', 'عامة 🌍') == 'عامة 🌍' else False,
+        "chat_id": str(message.from_user.id),     # ربط المسابقة بالمستخدم بدلاً من الشات
+        "is_public": True,                        # جعلها عامة لتظهر في المجموعات
         "time_limit": data.get('quiz_time', 15),
         "questions_count": data.get('quiz_count', 10),
         "mode": data.get('quiz_mode', 'السرعة ⚡'),
         "hint_enabled": True if data.get('quiz_hint') == 'مفعل ✅' else False,
         "is_bot_quiz": data.get('is_bot_quiz', False),
-        "cats": selected
+        "cats": cats_json                         # الحفظ بالصيغة النظيفة
     }
+    # نهاية التعديلات
+    # ##########################################
+
     try:
         supabase.table("saved_quizzes").insert(payload).execute()
-        await message.answer(f"✅ تم حفظ ({quiz_name}) بنجاح!")
+        await message.answer(f"✅ تم حفظ ({quiz_name}) بنجاح!\n🚀 ستظهر لك الآن في قائمة المسابقات المحفوظة في أي مكان.")
         await state.finish()
     except Exception as e:
-        await message.answer(f"❌ خطأ: تأكد من تحديث أعمدة Supabase.")
-
+        print(f"Error saving quiz: {e}")
+        await message.answer(f"❌ خطأ في الحفظ: تأكد من ربط قاعدة البيانات بشكل صحيح.")
  # --- [1] عرض القائمة الرئيسية (نظام ياسر المتطور: خاص vs عام) ---
 @dp.message_handler(lambda message: message.text == "مسابقة")
 async def show_quizzes(obj):
