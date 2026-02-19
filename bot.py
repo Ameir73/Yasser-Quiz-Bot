@@ -2,6 +2,7 @@ import logging
 import asyncio
 import random
 import time
+import os  # مكتبة استدعاء متغيرات النظام
 import google.generativeai as genai
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -10,18 +11,19 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
-# --- [ 1. إعدادات الهوية والاتصال ] ---
-API_TOKEN = '7948017595:AAFeVqu15e6jA0M3GWYZWDLOIV7f0QvjhVs'
+# --- [ 1. إعدادات الهوية والاتصال المشفرة ] ---
+# جلب المفاتيح من متغيرات البيئة (Environment Variables)
+API_TOKEN = os.getenv('BOT_TOKEN')
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+GEMINI_KEY = os.getenv('GEMINI_API_KEY')
+
 ADMIN_ID = 7988144062
 OWNER_USERNAME = "@Ya_79k"
 MY_TELEGRAM_URL = "https://t.me/Ya_79k"
 
-# بيانات Supabase (استخدمنا مفتاح الـ anon المستقر لـ Render)
-SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubGNidGd6ZHhzYWN3amlwZ2duIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3NDMzMiwiZXhwIjoyMDg2MTUwMzMyfQ.v3SRkONLNlQw5LWhjo03u0fDce3EvWGBpJ02OGg5DEI"
-
 # --- [ 2. إعداد الذكاء الاصطناعي Gemini ] ---
-genai.configure(api_key="AIzaSyAKUz-zkpcVWipm3SBzeV_tXpQ8lG3QjOk")
+genai.configure(api_key=GEMINI_KEY)
 ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- [ 3. تعريف المحركات الأساسية ] ---
