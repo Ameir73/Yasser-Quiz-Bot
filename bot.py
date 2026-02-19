@@ -898,14 +898,21 @@ async def handle_secure_actions(c: types.CallbackQuery):
         if c.data.startswith('manage_quiz_'):
             quiz_id = data_parts[2]
             res = supabase.table("saved_quizzes").select("quiz_name").eq("id", quiz_id).single().execute()
+            
             kb = InlineKeyboardMarkup(row_width=1).add(
                 InlineKeyboardButton("🚀 بدء المسابقة", callback_data=f"run_{quiz_id}_{user_id}"),
                 InlineKeyboardButton("⚙️ إعدادات المسابقة", callback_data=f"quiz_settings_{quiz_id}_{user_id}"),
-                InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"back_to_list_{user_id}")
+                # الإصلاح: جعل زر الرجوع يعود لعرض قائمة المسابقات الشاملة
+                InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"list_my_quizzes_{user_id}") 
             )
-            await c.message.edit_text(f"💎 **إدارة مسابقة: {res.data['quiz_name']}**\nيمكنك البدء الآن أو التحكم في الإعدادات أدناه:", reply_markup=kb)
+            
+            await c.message.edit_text(
+                f"💎 **إدارة مسابقة: {res.data['quiz_name']}**\n\nيمكنك البدء الآن أو التحكم في الإعدادات أدناه:", 
+                reply_markup=kb, 
+                parse_mode="Markdown"
+            )
             return
-
+            
                     # --- لوحة الإعدادات (التشطيب النهائي: تفاعل حي) ---
         if c.data.startswith('quiz_settings_'):
             quiz_id = data_parts[2]
