@@ -177,34 +177,48 @@ async def process_auth_callback(callback_query: types.CallbackQuery):
         await bot.send_message(target_id, "🚫 **نعتذر، تم رفض طلب تفعيل البوت في هذا القروب.**")
 
 # --- 2. إدارة الأقسام والأسئلة ---
-# هنا نبدأ كود إضافة الأسئلة لقسم البوت...
-
-# --- 2. إدارة الأقسام والأسئلة ---
-@dp.callback_query_handler(lambda c: c.data == 'custom_add')
-async def custom_add_menu(c: types.CallbackQuery):
+@dp.callback_query_handler(lambda c: c.data == 'custom_add', state="*")
+async def custom_add_menu(c: types.CallbackQuery, state: FSMContext):
+    await state.finish() # إنهاء أي حالة سابقة لضمان عمل الأزرار
     kb = InlineKeyboardMarkup(row_width=1).add(
         InlineKeyboardButton("➕ إضافة قسم جديد", callback_data="add_new_cat"),
         InlineKeyboardButton("📋 قائمة الأقسام", callback_data="list_cats"),
-        InlineKeyboardButton("🔙 الرجوع صفحه التحكم", callback_data="back_to_control")
+        # إصلاح زر الرجوع ليعود للوحة التحكم الرئيسية (Control Panel)
+        InlineKeyboardButton("🔙 الرجوع لصفحة التحكم", callback_data="back_to_control")
     )
-    await c.message.edit_text("أهلاً بك في لوحة اعدادات أقسامك الخاصة:", reply_markup=kb)
-@dp.callback_query_handler(lambda c: c.data == 'add_new_cat')
+    await c.message.edit_text("⚙️ **لوحة إعدادات أقسامك الخاصة:**\nيمكنك إضافة أقسام جديدة أو إدارة الأقسام الحالية.", reply_markup=kb, parse_mode="Markdown")
+
+@dp.callback_query_handler(lambda c: c.data == 'add_new_cat', state="*")
 async def btn_add_cat(c: types.CallbackQuery):
-    await c.answer() # هذا السطر يخبر تليجرام أن الأمر وصل فيلغي التعليق فوراً
+    await c.answer() 
     await Form.waiting_for_cat_name.set()
-    await c.message.answer("📝 اكتب اسم القسم الجديد مثال (دين، عامة...):")
+    # زر تراجع في حال غير المستخدم رأيه أثناء الكتابة
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("🚫 إلغاء", callback_data="custom_add"))
+    await c.message.answer("📝 **اكتب اسم القسم الجديد:**\nمثال: (ثقافة عامة، تاريخ، رياضة...)", reply_markup=kb, parse_mode="Markdown")
+
 @dp.message_handler(state=Form.waiting_for_cat_name)
 async def save_cat(message: types.Message, state: FSMContext):
+    cat_name = message.text.strip()
     try:
-        # 1. إرسال البيانات بشكل صحيح لتجنب خطأ 23502
+        # 1. إدراج القسم في قاعدة البيانات
         supabase.table("categories").insert({
-            "name": message.text, 
+            "name": cat_name, 
             "created_by": str(message.from_user.id)
         }).execute()
         
         await state.finish()
-        await message.answer(f"✅ تم حفظ القسم '{message.text}' بنجاح.")
+        
+        # 2. رسالة نجاح مع أزرار سريعة للعودة أو إضافة المزيد
+        kb = InlineKeyboardMarkup(row_width=2).add(
+            InlineKeyboardButton("➕ إضافة قسم آخر", callback_data="add_new_cat"),
+            InlineKeyboardButton("🔙 العودة للأقسام", callback_data="custom_add")
+        )
+        await message.answer(f"✅ تم حفظ القسم **'{cat_name}'** بنجاح.", reply_markup=kb, parse_mode="Markdown")
 
+    except Exception as e:
+        logging.error(f"Error saving category: {e}")
+        await message.answer("❌ عذراً، حدث خطأ أثناء حفظ القسم. تأكد أن الاسم غير مكرر.")
+        
         # 1. جلب معرف المستخدم لفلترة الأقسام فوراً
         user_id = str(message.from_user.id)
         
