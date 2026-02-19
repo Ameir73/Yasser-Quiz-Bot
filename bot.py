@@ -11,7 +11,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
 # --- [ 1. إعدادات الهوية والاتصال ] ---
-API_TOKEN = '7948017595:AAGIu30tTiBCNN18bZiwerJGX5Dg-NKNjE4'
+API_TOKEN = '7948017595:AAFeVqu15e6jA0M3GWYZWDLOIV7f0QvjhVs'
 ADMIN_ID = 7988144062
 OWNER_USERNAME = "@Ya_79k"
 MY_TELEGRAM_URL = "https://t.me/Ya_79k"
