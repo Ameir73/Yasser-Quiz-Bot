@@ -1096,19 +1096,20 @@ async def engine_private_questions(chat_id, quiz_data, owner_name):
     except Exception as e:
         logging.error(f"Private Engine Error: {e}")
 
-# --- [ مصنع التلميحات النارية بالذكاء الاصطناعي ] ---
+# ==========================================
+# [1] مصنع التلميحات النارية (بواسطة Gemini AI)
+# ==========================================
 async def generate_smart_hint(answer_text):
     answer_text = str(answer_text).strip()
     
-    # 1. إذا كانت الإجابة كلمة واحدة قصيرة (تلميح هيكلي)
+    # 1. إذا كانت الإجابة كلمة واحدة قصيرة (تلميح هيكلي يدوي)
     if len(answer_text) <= 3 and " " not in answer_text:
         return f"💡 **تلميح سريع:** تتكون من {len(answer_text)} حروف، وتبدأ بحرف ( {answer_text[0]} )"
 
-    # 2. البرومبت الناري لمحرك Gemini (الوصف اللغزي)
+    # 2. البرومبت الناري لمحرك Gemini
     prompt = f"""
     أنت خبير ألغاز عبقري. الإجابة هي: ({answer_text}).
     اعطني تلميحاً واحداً "نارياً" وغامضاً يصف الإجابة دون ذكرها نهائياً.
-    
     الشروط:
     - لا تذكر أي حرف من حروف الإجابة.
     - صف (الشهرة، الوظيفة، أو لغزاً تاريخياً) مرتبط بها.
@@ -1117,9 +1118,9 @@ async def generate_smart_hint(answer_text):
     """
     
     try:
-        # استدعاء Gemini (تأكد أن دالة call_gemini_ai موجودة عندك)
-        ai_response = await call_gemini_ai(prompt)
-        hint = ai_response.strip().replace('"', '')
+        # استدعاء Gemini مباشرة عبر ai_model المعرف مسبقاً
+        response = ai_model.generate_content(prompt)
+        hint = response.text.strip().replace('"', '')
         
         return (
             f"🔥 **تلميح ناري للمحترفين:**\n"
@@ -1128,29 +1129,35 @@ async def generate_smart_hint(answer_text):
         )
     except Exception as e:
         logging.error(f"AI Hint Error: {e}")
-        # تلميح احتياطي في حال فشل الـ AI
+        # تلميح احتياطي تقليدي في حال فشل الـ AI
         return f"⚡ **تلميح ذكي:** يبدأ بحرف ( {answer_text[0]} ) وينتهي بـ ( {answer_text[-1]} )"
-# --- [المشغل الموحد للنتائج والقوالب - نسخة الإصلاح والتلميح الناري 🔥] ---
+
+# دالة حذف الرسائل المساعدة
+async def delete_after(message, delay):
+    await asyncio.sleep(delay)
+    try: await message.delete()
+    except: pass
+
+# ==========================================
+# [2] المحرك الموحد (نسخة الإصلاح والتلميح الناري 🔥)
+# ==========================================
 async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_type):
     random.shuffle(questions)
     overall_scores = {}
 
     for i, q in enumerate(questions):
-        # 1. تحديد المسميات حسب نوع المحرك
+        # 1. استخراج الإجابة والنص حسب نوع المصدر
         if engine_type == "bot":
-            q_text = q.get('question_content') or '⚠️ نص مفقود'
             ans = str(q.get('correct_answer') or "").strip()
             cat_name = q.get('category') or "بوت"
         elif engine_type == "user":
-            q_text = q.get('question_text') or q.get('question_content') or '⚠️ نص مفقود'
             ans = str(q.get('answer_text') or q.get('correct_answer') or "").strip()
             cat_name = q['categories']['name'] if q.get('categories') else "عام"
-        else: # private
-            q_text = q.get('question_content') or q.get('text')
+        else:
             ans = str(q.get('correct_answer') or q.get('ans') or "").strip()
             cat_name = "قسم خاص 🔒"
 
-        # 2. إعداد حالة السؤال الجديد
+        # 2. تصفير حالة السؤال
         active_quizzes[chat_id] = {
             "active": True, 
             "ans": ans, 
@@ -1159,7 +1166,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             "hint_sent": False
         }
         
-        # 3. استدعاء قالب الأسئلة
+        # 3. إرسال السؤال للقروب
         await send_quiz_question(chat_id, q, i+1, len(questions), {
             'owner_name': owner_name, 
             'mode': quiz_data['mode'], 
@@ -1167,51 +1174,42 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             'cat_name': cat_name
         })
         
-        # 4. محرك الوقت والتلميح الناري
+        # 4. محرك الوقت الذكي مع مراقبة التلميح
         start_time = time.time()
-        t_limit = int(quiz_data['time_limit'])
+        t_limit = int(quiz_data.get('time_limit', 15))
         
         while time.time() - start_time < t_limit:
-            # التحقق إذا كانت المسابقة ما زالت نشطة (للسماح بالخروج في نظام السرعة)
             if not active_quizzes.get(chat_id) or not active_quizzes[chat_id]['active']:
                 break
             
-            # --- [نظام التلميح الناري المتطور] ---
+            # منطق إطلاق التلميح الناري عند منتصف الوقت
             if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
-                elapsed = time.time() - start_time
-                if elapsed >= (t_limit / 2): # يظهر في منتصف الوقت بالضبط
+                if (time.time() - start_time) >= (t_limit / 2):
                     try:
-                        # استدعاء التلميح الناري (تأكد أن دالة generate_smart_hint موجودة فوق)
                         hint_text = await generate_smart_hint(ans)
-                        h_msg = await bot.send_message(chat_id, hint_text, parse_mode="HTML", disable_notification=False)
+                        h_msg = await bot.send_message(chat_id, hint_text, parse_mode="HTML")
                         active_quizzes[chat_id]['hint_sent'] = True
-                        # حذف التلميح بعد 7 ثواني (عشان يلحقوا يقرأوه)
-                        asyncio.create_task(delete_after(h_msg, 7))
+                        asyncio.create_task(delete_after(h_msg, 8)) # حذف بعد 8 ثواني
                     except Exception as e:
-                        logging.error(f"Fire Hint Error: {e}")
+                        logging.error(f"Fire Hint Execution Error: {e}")
 
-            # أهم سطر لمنع تعليق البوت واستقبال الإجابات
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5) # نبض المحرك
 
-        # 5. إنهاء وقت السؤال وتوزيع النقاط
-        if chat_id in active_quizzes:
-            active_quizzes[chat_id]['active'] = False
-        
+        # 5. إنهاء السؤال وحساب النقاط
+        active_quizzes[chat_id]['active'] = False
         for w in active_quizzes[chat_id]['winners']:
             uid = w['id']
             if uid not in overall_scores: 
                 overall_scores[uid] = {"name": w['name'], "points": 0}
             overall_scores[uid]['points'] += 10
         
-        # 6. استدعاء نتائج السؤال (لوحة المبدعين)
+        # 6. عرض لوحة المبدعين (نتائج السؤال)
         await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
-        
-        # فاصل زمني بين الأسئلة
-        await asyncio.sleep(2)
+        await asyncio.sleep(2.5) # فاصل بين الأسئلة
 
-    # 7. استدعاء النتائج النهائية (لوحة الشرف)
+    # 7. إعلان لوحة الشرف النهائية
     await send_final_results(chat_id, overall_scores, len(questions))
-    
+        
 # ==========================================
 # 4. الجزء الثالث: قالب السؤال والتلميح...........     
 # ==========================================
