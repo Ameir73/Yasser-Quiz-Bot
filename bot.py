@@ -1,4 +1,4 @@
-import logging
+ضimport logging
 import asyncio
 import random
 import time
@@ -39,19 +39,19 @@ dp = Dispatcher(bot, storage=storage)
 
 async def send_creative_results(chat_id, correct_ans, winners, overall_scores):
     """تصميم ياسر المطور: دمج الفائزين والترتيب في رسالة واحدة"""
-    msg =  "━━━━━━━━━━━━━━━━━━━━━\n"
+    msg =  "━━━━━━━━━━━━━━━━━━━\n"
     msg += f"✅ الإجابة الصحيحة: <b>{correct_ans}</b>\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "━━━━━━━━━━━━━━━━━━━\n\n"
     
     if winners:
-        msg += "━━━━ أبطال هذا السؤال ✅ ━━━━\n"
+        msg += "━ إجاباتهم صحيحة ✅ ━\n"
         for i, w in enumerate(winners, 1):
             msg += f"{i}- {w['name']} (+10)\n"
     else:
         msg += "❌ لم ينجح أحد في الإجابة على هذا السؤال\n"
     
     leaderboard = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)
-    msg += "\n━━━━ 🏆 الترتيب العام للمسابقة ━━━━\n"
+    msg += "\n━ 🏆 الترتيب العام للمسابقة ━\n"
     medals = ["🥇", "🥈", "🥉"]
     for i, player in enumerate(leaderboard[:3]):
         medal = medals[i] if i < 3 else "👤"
@@ -61,16 +61,16 @@ async def send_creative_results(chat_id, correct_ans, winners, overall_scores):
     
 async def send_final_results(chat_id, overall_scores, correct_count):
     """تصميم ياسر لرسالة ختام المسابقة"""
-    msg =  "━━━━━━━━━━━━━━━━━━━━━\n"
+    msg =  "━━━━━━━━━━━━━━━━━━━\n"
     msg += "🏁 <b>انـتـهـت الـمـسـابـقـة بنجاح!</b> 🏁\n"
     msg += "شكرًا لكل من شارك وأمتعنا بمنافسته. 🌹\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
-    msg += "━━━━ 🥇 الـفـائـزون بـالـمـراكز الأولى 🥇 ━━━━\n\n"
+    msg += "━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "━ 🥇 الـفـائـزون بـالـمـراكز الأولى 🥇 ━\n\n"
     sorted_players = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)
     medals = ["🥇", "🥈", "🥉"]
     for i, player in enumerate(sorted_players[:3]):
         msg += f"{medals[i]} المركز {'الأول' if i==0 else 'الثاني' if i==1 else 'الثالث'}: <b>{player['name']}</b> - [🏆 {player['points']}]\n"
-    msg += "\n━━━━━━━━━━━━━━━━━━━━━\n\n━━━━ 📊 إحصائيات التفاعل 📊 ━━━━\n"
+    msg += "\n━━━━━━━━━━━━━━━━━━━\n\n━ 📊 إحصائيات التفاعل 📊 ━\n"
     msg += f"✅ إجمالي الإجابات الصحيحة: {correct_count}\n\n"
     msg += "╰──────────────────╯\n"
     msg += "تهانينا للفائزين وحظاً أوفر لمن لم يحالفه الحظ! ❤️"
@@ -133,12 +133,12 @@ async def control_panel(message: types.Message):
     if status != "active" and message.chat.id != ADMIN_ID:
         return await message.reply("⚠️ <b>عذراً، يجب تفعيل المجموعة أولاً.</b>\nأرسل كلمة (تفعيل) لطلب الموافقة من المطور.", parse_mode="HTML")
 
-    txt = (f"👋 أهلاً بك في أعدادات المسابقات المطور  \n"
+    txt = (f"👋 أهلا بك في لوحة أعدادات المسابقات الخاصة \n"
            f"👑 المطور: <b>{OWNER_USERNAME}</b>")
     kb = InlineKeyboardMarkup(row_width=2).add(
-        InlineKeyboardButton("📝 إضافة مخصصة", callback_data="custom_add"),
+        InlineKeyboardButton("📝 إضافة خاصة", callback_data="custom_add"),
         InlineKeyboardButton("📅 جلسة سابقة", callback_data="dev"),
-        InlineKeyboardButton("🏆 تهيئة مسابقة", callback_data="setup_quiz"),
+        InlineKeyboardButton("🏆تجهيز مسابقة", callback_data="setup_quiz"),
         InlineKeyboardButton("📊 لوحة الصدارة", callback_data="leaderboard"),
         InlineKeyboardButton("🛑 إغلاق", callback_data="close_bot")
     )
@@ -162,7 +162,7 @@ async def process_auth_callback(callback_query: types.CallbackQuery):
             parse_mode="Markdown"
         )
         # إشعار القروب
-        await bot.send_message(target_id, "🎊 **مبارك! تم تفعيل القروب.** أرسل كلمة (مسابقة) للبدء.", parse_mode="Markdown")
+        await bot.send_message(target_id, " **مبارك! تم تفعيل القروب.** أرسل كلمة (مسابقة) للبدء.", parse_mode="Markdown")
     
     elif action == "ban":
         # تحديث الحالة إلى محظور
@@ -192,7 +192,7 @@ async def custom_add_menu(c: types.CallbackQuery):
 async def btn_add_cat(c: types.CallbackQuery):
     await c.answer() # هذا السطر يخبر تليجرام أن الأمر وصل فيلغي التعليق فوراً
     await Form.waiting_for_cat_name.set()
-    await c.message.answer("📝 اكتب اسم القسم الجديد (دين، عامة...):")
+    await c.message.answer("📝 اكتب اسم القسم الجديد مثال (دين، عامة...):")
 @dp.message_handler(state=Form.waiting_for_cat_name)
 async def save_cat(message: types.Message, state: FSMContext):
     try:
