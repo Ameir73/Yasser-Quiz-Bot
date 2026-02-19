@@ -1150,7 +1150,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             ans = str(q.get('correct_answer') or q.get('ans') or "").strip()
             cat_name = "قسم خاص 🔒"
 
-        # 2. تصفير حالة السؤال
+        # 2. تصفير حالة السؤال وتجهيز الذاكرة النشطة
         active_quizzes[chat_id] = {
             "active": True, 
             "ans": ans, 
@@ -1159,7 +1159,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             "hint_sent": False
         }
         
-        # 3. إرسال السؤال للقروب
+        # 3. إرسال قالب السؤال للقروب
         await send_quiz_question(chat_id, q, i+1, len(questions), {
             'owner_name': owner_name, 
             'mode': quiz_data['mode'], 
@@ -1167,7 +1167,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             'cat_name': cat_name
         })
         
-        # 4. محرك الوقت الذكي مع مراقبة التلميح
+        # 4. محرك الوقت الذكي ومراقبة التلميح الناري
         start_time = time.time()
         t_limit = int(quiz_data.get('time_limit', 15))
         
@@ -1175,34 +1175,39 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             if not active_quizzes.get(chat_id) or not active_quizzes[chat_id]['active']:
                 break
             
-            # منطق إطلاق التلميح الناري عند منتصف الوقت
+            # --- نظام إطلاق التلميح عند منتصف الوقت بالضبط ---
             if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                 if (time.time() - start_time) >= (t_limit / 2):
                     try:
                         hint_text = await generate_smart_hint(ans)
                         h_msg = await bot.send_message(chat_id, hint_text, parse_mode="HTML")
                         active_quizzes[chat_id]['hint_sent'] = True
-                        asyncio.create_task(delete_after(h_msg, 8)) # حذف بعد 8 ثواني
+                        # حذف التلميح بعد 8 ثواني لضمان نظافة القروب
+                        asyncio.create_task(delete_after(h_msg, 8))
                     except Exception as e:
                         logging.error(f"Fire Hint Execution Error: {e}")
 
-            await asyncio.sleep(0.5) # نبض المحرك
+            await asyncio.sleep(0.5) # نبض المحرك للسماح بمعالجة الإجابات
 
-        # 5. إنهاء السؤال وحساب النقاط
-        active_quizzes[chat_id]['active'] = False
-        for w in active_quizzes[chat_id]['winners']:
-            uid = w['id']
-            if uid not in overall_scores: 
-                overall_scores[uid] = {"name": w['name'], "points": 0}
-            overall_scores[uid]['points'] += 10
+        # 5. إنهاء السؤال وحساب النقاط للفائزين
+        if chat_id in active_quizzes:
+            active_quizzes[chat_id]['active'] = False
+            
+            for w in active_quizzes[chat_id]['winners']:
+                uid = w['id']
+                if uid not in overall_scores: 
+                    overall_scores[uid] = {"name": w['name'], "points": 0}
+                overall_scores[uid]['points'] += 10
         
-        # 6. عرض لوحة المبدعين (نتائج السؤال)
-        await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
-        await asyncio.sleep(2.5) # فاصل بين الأسئلة
+            # 6. عرض لوحة المبدعين (نتائج السؤال اللحظية)
+            await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
+        
+        # فاصل زمني بسيط قبل الانتقال للسؤال التالي
+        await asyncio.sleep(2.5)
 
-    # 7. إعلان لوحة الشرف النهائية
+    # 7. إعلان لوحة الشرف النهائية وتتويج الأبطال
     await send_final_results(chat_id, overall_scores, len(questions))
-        
+
 # ==========================================
 # 4. الجزء الثالث: قالب السؤال والتلميح...........     
 # ==========================================
