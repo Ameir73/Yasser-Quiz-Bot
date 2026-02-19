@@ -1024,14 +1024,15 @@ async def save_and_exit(c: types.CallbackQuery):
     # تشغيل هاندلر الإدارة (سيقوم بعرض زر "بدء المسابقة")
     return await bot.on_callback_query(c)
     
-        # --- [ نظام التشغيل المطور ] ---
+                # --- [ نظام التشغيل المطور ] ---
         if c.data.startswith('run_'):
             await c.answer("🚀 جارٍ بدء المسابقة..")
             quiz_id = data_parts[1]
             
             res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
             q_data = res.data
-            if not q_data: return
+            if not q_data: 
+                return
 
             quiz_config = {
                 'cats': q_data.get('cats') or [],
@@ -1046,7 +1047,7 @@ async def save_and_exit(c: types.CallbackQuery):
             
             await countdown_timer(c.message, 5)
             
-            # 🚦 التوجيه الصحيح (يجب أن يكون هنا داخل الدالة)
+            # 🚦 التوجيه الصحيح للمحركات
             if quiz_config.get('is_bot_quiz'):
                 await engine_bot_questions(c.message.chat.id, quiz_config, c.from_user.first_name)
             elif quiz_config.get('is_private'):
@@ -1055,6 +1056,7 @@ async def save_and_exit(c: types.CallbackQuery):
                 await engine_user_questions(c.message.chat.id, quiz_config, c.from_user.first_name)
             return
 
+        # --- [ تأكيد الحذف ] ---
         elif c.data.startswith('confirm_del_'):
             quiz_id = data_parts[2]
             kb = InlineKeyboardMarkup(row_width=2).add(
@@ -1064,24 +1066,24 @@ async def save_and_exit(c: types.CallbackQuery):
             await c.message.edit_text("⚠️ **هل أنت متأكد من الحذف نهائياً؟**", reply_markup=kb)
             return
 
+        # --- [ الحذف النهائي ] ---
         elif c.data.startswith('final_del_'):
             quiz_id = data_parts[2]
             supabase.table("saved_quizzes").delete().eq("id", quiz_id).execute()
-            await c.answer("🗑️ تم الحذف بنجاح")
-            # استدعاء دالة عرض القائمة بعد الحذف
-            await show_quizzes(c)
-            return
-
-        elif c.data.startswith('final_del_'):
-            quiz_id = data_parts[2]
-            supabase.table("saved_quizzes").delete().eq("id", quiz_id).execute()
-            await c.answer("🗑️ تم الحذف بنجاح")
-            await show_quizzes(c)
+            await c.answer("🗑️ تم الحذف بنجاح", show_alert=True)
+            # استدعاء دالة عرض القائمة (تأكد أن اسمها show_quizzes)
+            try:
+                await show_quizzes(c)
+            except:
+                await c.message.edit_text("✅ تم الحذف. ارجع للقائمة الرئيسية.")
             return
 
     except Exception as e:
+        import logging
         logging.error(f"Error in Secure Logic: {e}")
-        await c.answer("🚨 حدث خطأ أثناء تنفيذ الإجراء")
+        try:
+            await c.answer("🚨 حدث خطأ أثناء تنفيذ الإجراء", show_alert=True)
+        except: pass
 
 # ==========================================
 # 3. نظام المحركات الثلاثة المنفصلة (ياسر المطور)
