@@ -2,7 +2,7 @@ import logging
 import asyncio
 import random
 import time
-import google.generativeai as genai  # أضفنا المكتبة هنا
+import google.generativeai as genai
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
@@ -10,36 +10,31 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
-# --- البيانات الخاصة بياسر ---
+# --- [ 1. إعدادات الهوية والاتصال ] ---
 API_TOKEN = '7948017595:AAGIu30tTiBCNN18bZiwerJGX5Dg-NKNjE4'
-SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubGNidGd6ZHhzYWN3amlwZ2duIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3NDMzMiwiZXhwIjoyMDg2MTUwMzMyfQ.v3SRkONLNlQw5LWhjo03u0fDce3EvWGBpJ02OGg5DEI"
+ADMIN_ID = 7988144062
 OWNER_USERNAME = "@Ya_79k"
 MY_TELEGRAM_URL = "https://t.me/Ya_79k"
 
-# معرف المطور (ياسر) للتحكم بالإدارة والتفعيل
-ADMIN_ID = 7988144062
-# الربط بسوبابيس
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# بيانات Supabase (استخدمنا مفتاح الـ anon المستقر لـ Render)
+SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubGNidGd6ZHhzYWN3amlwZ2duIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3NDMzMiwiZXhwIjoyMDg2MTUwMzMyfQ.v3SRkONLNlQw5LWhjo03u0fDce3EvWGBpJ02OGg5DEI"
 
-# --- [ إعداد الذكاء الاصطناعي Gemini ] ---
+# --- [ 2. إعداد الذكاء الاصطناعي Gemini ] ---
 genai.configure(api_key="AIzaSyAKUz-zkpcVWipm3SBzeV_tXpQ8lG3QjOk")
 ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
-# استكمال تعريف البوت
-bot = Bot(token=API_TOKEN)
+# --- [ 3. تعريف المحركات الأساسية ] ---
+bot = Bot(token=API_TOKEN, parse_mode="HTML")
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 active_quizzes = {}
 
-# معرف المطور (ياسر) للتحكم بالإدارة والتفعيل
-ADMIN_ID = 7988144062
-# الربط بسوبابيس
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-# -الاحترافي ] ---
+# --- [ 4. الدوال المساعدة ] ---
 async def get_group_status(chat_id):
+    """فحص حالة تفعيل المجموعة في قاعدة البيانات"""
     try:
         res = supabase.table("allowed_groups").select("status").eq("group_id", chat_id).execute()
         if res.data and len(res.data) > 0:
@@ -48,12 +43,7 @@ async def get_group_status(chat_id):
     except Exception as e:
         logging.error(f"خطأ في فحص حالة المجموعة: {e}")
         return None
-
-# إعداد البوت بنظام HTML
-bot = Bot(token=API_TOKEN, parse_mode="HTML")
-storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
-
+        
 async def send_creative_results(chat_id, correct_ans, winners, overall_scores):
     """تصميم ياسر المطور: دمج الفائزين والترتيب في رسالة واحدة"""
     msg =  "━━━━━━━━━━━━━━━━━━━\n"
