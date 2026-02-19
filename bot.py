@@ -918,10 +918,13 @@ async def handle_secure_actions(c: types.CallbackQuery):
                 parse_mode="Markdown"
             )
             return
-            
-            
+                # تأكد إن هذا الجزء موجود قبل الدالة الجديدة
+    except Exception as e:
+        print(f"Error: {e}")
+        pass
+  
         # --- [ 1. الدالة المركزية لتحديث الشاشة والأزرار فوراً ] ---
-async def update_quiz_settings_ui(c: types.CallbackQuery, quiz_id, user_id):
+    async def update_quiz_settings_ui(c: types.CallbackQuery, quiz_id, user_id):
     # جلب البيانات المحدثة
     res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
     q = res.data
