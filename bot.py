@@ -959,35 +959,50 @@ async def handle_secure_actions(c: types.CallbackQuery, state: FSMContext):
             await c.message.edit_text(text, reply_markup=kb)
             return
 
-        # 3️⃣ التبديلات (Toggles) - يتم التحديث في الداتابيز فوراً وإعادة رسم اللوحة
+                # 3️⃣ التبديلات (Toggles) - نسخة مصلحة وآمنة للنطاق
         if any(c.data.startswith(x) for x in ['toggle_hint_', 'toggle_speed_', 'toggle_scope_', 'set_c_', 'set_t_']):
             quiz_id = data_parts[2]
             
-            if 'hint' in c.data:
-                res = supabase.table("saved_quizzes").select("smart_hint").eq("id", quiz_id).single().execute()
-                supabase.table("saved_quizzes").update({"smart_hint": not res.data['smart_hint']}).eq("id", quiz_id).execute()
-            elif 'speed' in c.data:
-                res = supabase.table("saved_quizzes").select("mode").eq("id", quiz_id).single().execute()
-                nm = "الوقت الكامل ⏳" if res.data['mode'] == "السرعة ⚡" else "السرعة ⚡"
-                supabase.table("saved_quizzes").update({"mode": nm}).eq("id", quiz_id).execute()
-            elif 'scope' in c.data:
+            # محرك النطاق (Scope) المصلح
+            if 'toggle_scope_' in c.data:
                 res = supabase.table("saved_quizzes").select("quiz_scope").eq("id", quiz_id).single().execute()
-                ns = "عام" if res.data['quiz_scope'] == "خاص" else "خاص"
-                supabase.table("saved_quizzes").update({"quiz_scope": ns}).eq("id", quiz_id).execute()
+                # إذا كان الحقل فارغاً في الداتابيز، نعتبره "خاص" افتراضياً
+                curr_s = res.data.get('quiz_scope', 'خاص') if res.data else 'خاص'
+                new_s = "عام" if curr_s == "خاص" else "خاص"
+                supabase.table("saved_quizzes").update({"quiz_scope": new_s}).eq("id", quiz_id).execute()
+                await c.answer(f"🌐 النطاق الجديد: {new_s}")
+
+            # محرك التلميح (Hint)
+            elif 'toggle_hint_' in c.data:
+                res = supabase.table("saved_quizzes").select("smart_hint").eq("id", quiz_id).single().execute()
+                new_h = not (res.data.get('smart_hint') if res.data else False)
+                supabase.table("saved_quizzes").update({"smart_hint": new_h}).eq("id", quiz_id).execute()
+
+            # محرك النظام (Mode)
+            elif 'toggle_speed_' in c.data:
+                res = supabase.table("saved_quizzes").select("mode").eq("id", quiz_id).single().execute()
+                curr_m = res.data.get('mode', 'السرعة ⚡') if res.data else 'السرعة ⚡'
+                new_m = "الوقت الكامل ⏳" if curr_m == "السرعة ⚡" else "السرعة ⚡"
+                supabase.table("saved_quizzes").update({"mode": new_m}).eq("id", quiz_id).execute()
+
+            # محرك عدد الأسئلة
             elif 'set_c_' in c.data:
-                supabase.table("saved_quizzes").update({"questions_count": int(data_parts[3])}).eq("id", quiz_id).execute()
+                count = int(data_parts[3])
+                supabase.table("saved_quizzes").update({"questions_count": count}).eq("id", quiz_id).execute()
             
+            # إعادة تنشيط الواجهة لتعكس التعديلات فوراً
             await c.answer("تم التحديث ✅")
             c.data = f"quiz_settings_{quiz_id}_{user_id}"
             return await handle_secure_actions(c, state)
 
-        # 4️⃣ محرك تغيير الوقت (Cycle Time)
+        # 4️⃣ محرك تغيير الوقت (Cycle Time) - نسخة آمنة
         if c.data.startswith('edit_time_'):
             quiz_id = data_parts[2]
             res = supabase.table("saved_quizzes").select("time_limit").eq("id", quiz_id).single().execute()
-            curr = res.data['time_limit']
+            curr = res.data.get('time_limit', 15) if res.data else 15
             next_t = 20 if curr == 15 else (30 if curr == 20 else (45 if curr == 30 else 15))
             supabase.table("saved_quizzes").update({"time_limit": next_t}).eq("id", quiz_id).execute()
+            
             c.data = f"quiz_settings_{quiz_id}_{user_id}"
             return await handle_secure_actions(c, state)
 
