@@ -13,9 +13,14 @@ from supabase import create_client, Client
 # --- البيانات الخاصة بياسر ---
 API_TOKEN = '7948017595:AAGIu30tTiBCNN18bZiwerJGX5Dg-NKNjE4'
 SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubGNidGd6ZHhzYWN3amlwZ2duIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1NzQzMzIsImV4cCI6MjA4NjE1MDMzMn0.qfi6m18upJsyRq-V91zJBqjJPLsbnLXxR3tOBUywjAg" # اختصرتها هنا للجمالية
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubGNidGd6ZHhzYWN3amlwZ2duIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3NDMzMiwiZXhwIjoyMDg2MTUwMzMyfQ.v3SRkONLNlQw5LWhjo03u0fDce3EvWGBpJ02OGg5DEI"
 OWNER_USERNAME = "@Ya_79k"
 MY_TELEGRAM_URL = "https://t.me/Ya_79k"
+
+# معرف المطور (ياسر) للتحكم بالإدارة والتفعيل
+ADMIN_ID = 7988144062
+# الربط بسوبابيس
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- [ إعداد الذكاء الاصطناعي Gemini ] ---
 genai.configure(api_key="AIzaSyAKUz-zkpcVWipm3SBzeV_tXpQ8lG3QjOk")
