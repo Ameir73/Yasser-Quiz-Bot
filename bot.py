@@ -919,113 +919,108 @@ async def handle_secure_actions(c: types.CallbackQuery):
             )
             return
             
-                    # --- لوحة الإعدادات (التشطيب النهائي: تفاعل حي) ---
-        if c.data.startswith('quiz_settings_'):
-            quiz_id = data_parts[2]
-            res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
-            q = res.data
             
-            q_time = q.get('time_limit', 15)
-            q_count = q.get('questions_count', 10)
-            q_mode = q.get('mode', 'السرعة ⚡')
-            is_hint_on = q.get('smart_hint', False)
-            hint_label = "مفعل ✅" if is_hint_on else "معطل ❌"
-            is_broadcast = q.get('quiz_scope') == "عام"
-            scope_label = "إذاعة عامة 🌐" if is_broadcast else "مسابقة داخلية 📍"
+        # --- [ 1. الدالة المركزية لتحديث الشاشة والأزرار فوراً ] ---
+async def update_quiz_settings_ui(c: types.CallbackQuery, quiz_id, user_id):
+    # جلب البيانات المحدثة
+    res = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
+    q = res.data
+    
+    q_time = q.get('time_limit', 15)
+    q_count = q.get('questions_count', 10)
+    q_mode = q.get('mode', 'السرعة ⚡')
+    is_hint = q.get('smart_hint', False)
+    is_broadcast = q.get('quiz_scope') == "عام"
 
-            text = (
-                f"┏━━━━━ إعدادات: {q['quiz_name']} ━━━━━┓\n"
-                f"📊 عدد الاسئلة: {q_count}\n"
-                f"📡 النطاق: {scope_label}\n"
-                f"🔖 النظام: {q_mode}\n"
-                f"⏳ المهلة: {q_time} ثانية\n"
-                f"💡 التلميح الذكي: {hint_label}\n"
-                "┗━━━━━━━━━━━━━━━━━━━━┛"
-            )
+    # بناء نص الرسالة (الشاشة)
+    text = (
+        f"┏━━━━━ إعدادات: {q['quiz_name']} ━━━━━┓\n"
+        f"📊 عدد الاسئلة: {q_count}\n"
+        f"📡 النطاق: {'إذاعة عامة 🌐' if is_broadcast else 'مسابقة داخلية 📍'}\n"
+        f"🔖 النظام: {q_mode}\n"
+        f"⏳ المهلة: {q_time} ثانية\n"
+        f"💡 التلميح الذكي: {'مفعل ✅' if is_hint else 'معطل ❌'}\n"
+        "┗━━━━━━━━━━━━━━━━━━━━┛"
+    )
 
-            kb = InlineKeyboardMarkup(row_width=5)
-            kb.row(InlineKeyboardButton("📊 اختر عدد الأسئلة:", callback_data="ignore"))
-            counts = [10, 15, 25, 32, 45]
-            btn_counts = [InlineKeyboardButton(f"{'✅' if q_count==n else ''}{n}", callback_data=f"set_c_{quiz_id}_{n}_{user_id}") for n in counts]
-            kb.add(*btn_counts)
+    kb = InlineKeyboardMarkup(row_width=5)
+    
+    # صف اختيار العدد
+    kb.row(InlineKeyboardButton("📊 اختر عدد الأسئلة:", callback_data="ignore"))
+    counts = [10, 15, 25, 32, 45]
+    btn_counts = [InlineKeyboardButton(f"{'✅' if q_count==n else ''}{n}", callback_data=f"set_c_{quiz_id}_{n}_{user_id}") for n in counts]
+    kb.add(*btn_counts)
 
-            kb.row(InlineKeyboardButton(f"⏱️ المهلة: {q_time} ثانية", callback_data=f"edit_time_{quiz_id}_{user_id}"))
-            kb.row(
-                InlineKeyboardButton(f"🔖 {q_mode}", callback_data=f"toggle_speed_{quiz_id}_{user_id}"),
-                InlineKeyboardButton(f"💡 {hint_label}", callback_data=f"toggle_hint_{quiz_id}_{user_id}")
-            )
-            kb.row(InlineKeyboardButton(f"📡 النطاق: {scope_label}", callback_data=f"toggle_scope_{quiz_id}_{user_id}"))
-            
-            # زر الحفظ (يظهر تنبيه بالحفظ) وزر الرجوع (يرجع مباشرة)
-            kb.row(InlineKeyboardButton("✅ حفظ الإعدادات النهائية", callback_data=f"save_final_{quiz_id}_{user_id}"))
-            kb.row(
-                InlineKeyboardButton("🗑️ حذف المسابقة", callback_data=f"confirm_del_{quiz_id}_{user_id}"),
-                InlineKeyboardButton("🔙 رجوع بدون حفظ", callback_data=f"manage_quizzes_{user_id}")
-            )
-            
-            await c.message.edit_text(text, reply_markup=kb)
-            return
+    # صف الإعدادات (تتغير الأسماء هنا فوراً)
+    kb.row(InlineKeyboardButton(f"⏱️ المهلة: {q_time} ثانية", callback_data=f"edit_time_{quiz_id}_{user_id}"))
+    kb.row(
+        InlineKeyboardButton(f"🔖 {q_mode}", callback_data=f"toggle_speed_{quiz_id}_{user_id}"),
+        InlineKeyboardButton(f"💡 {'مفعل ✅' if is_hint else 'معطل ❌'}", callback_data=f"toggle_hint_{quiz_id}_{user_id}")
+    )
+    kb.row(InlineKeyboardButton(f"📡 {'نطاق: عام 🌐' if is_broadcast else 'نطاق: داخلي 📍'}", callback_data=f"toggle_scope_{quiz_id}_{user_id}"))
+    
+    # صف الأزرار النهائية
+    kb.row(InlineKeyboardButton("✅ حفظ الإعدادات النهائية", callback_data=f"save_final_{quiz_id}_{user_id}"))
+    kb.row(
+        InlineKeyboardButton("🗑️ حذف المسابقة", callback_data=f"confirm_del_{quiz_id}_{user_id}"),
+        InlineKeyboardButton("🔙 رجوع بدون حفظ", callback_data=f"manage_quiz_{quiz_id}_{user_id}")
+    )
 
-        # --- معالجة الحفظ النهائي ---
-        if c.data.startswith('save_final_'):
-            quiz_id = data_parts[2]
-            await c.answer("✅ تم حفظ جميع التعديلات بنجاح!", show_alert=True)
-            # العودة للقائمة الرئيسية للمسابقات
-            c.data = f"manage_quizzes_{user_id}" 
-            # هنا تستدعي دالة عرض القائمة الرئيسية (مثلاً: show_quizzes_list)
-            return
+    await c.message.edit_text(text, reply_markup=kb)
 
-        # --- تعديل الوقت (تحديث فوري) ---
-        if c.data.startswith('edit_time_'):
-            quiz_id = data_parts[2]
-            res = supabase.table("saved_quizzes").select("time_limit").eq("id", quiz_id).single().execute()
-            curr = res.data['time_limit']
-            next_t = 20 if curr == 15 else (30 if curr == 20 else (45 if curr == 30 else 15))
-            supabase.table("saved_quizzes").update({"time_limit": next_t}).eq("id", quiz_id).execute()
-            await c.answer(f"⏱️ {next_t} ثانية")
-            # إعادة بناء اللوحة لتظهر التغييرات فوراً
-            c.data = f"quiz_settings_{quiz_id}_{user_id}"
-            # استدعاء نفس الهاندلر لتحديث الرسالة
-            return await bot.on_callback_query(c) 
+# --- [ 2. الهاندلرز التفاعلية (تحديث فوري) ] ---
 
-        # --- تعديل عدد الأسئلة (تحديث فوري) ---
-        if c.data.startswith('set_c_'):
-            quiz_id, count = data_parts[2], data_parts[3]
-            supabase.table("saved_quizzes").update({"questions_count": int(count)}).eq("id", quiz_id).execute()
-            await c.answer(f"📊 تم اختيار {count}")
-            c.data = f"quiz_settings_{quiz_id}_{user_id}"
-            return await bot.on_callback_query(c)
+@dp.callback_query_handler(lambda c: any(c.data.startswith(x) for x in ['edit_time_', 'set_c_', 'toggle_hint_', 'toggle_speed_', 'toggle_scope_']), state="*")
+async def handle_settings_actions(c: types.CallbackQuery):
+    data_parts = c.data.split('_')
+    action = data_parts[0]
+    quiz_id = data_parts[2]
+    user_id = data_parts[-1]
 
-        # --- تفعيل/تعطيل التلميح (تحديث فوري) ---
-        if c.data.startswith('toggle_hint_'):
-            quiz_id = data_parts[2]
-            res = supabase.table("saved_quizzes").select("smart_hint").eq("id", quiz_id).single().execute()
-            new_val = not res.data.get('smart_hint', False)
-            supabase.table("saved_quizzes").update({"smart_hint": new_val}).eq("id", quiz_id).execute()
-            await c.answer("✅ تم التفعيل" if new_val else "❌ تم التعطيل")
-            c.data = f"quiz_settings_{quiz_id}_{user_id}"
-            return await bot.on_callback_query(c)
+    # منطق التعديل حسب نوع الزر
+    if action == "edit": # edit_time
+        res = supabase.table("saved_quizzes").select("time_limit").eq("id", quiz_id).single().execute()
+        curr = res.data['time_limit']
+        next_t = 20 if curr == 15 else (30 if curr == 20 else (45 if curr == 30 else 15))
+        supabase.table("saved_quizzes").update({"time_limit": next_t}).eq("id", quiz_id).execute()
+        await c.answer(f"⏱️ تم الضبط: {next_t} ثانية")
 
-        # --- تبديل الأنظمة (تحديث فوري) ---
-        if c.data.startswith('toggle_speed_'):
-            quiz_id = data_parts[2]
-            res = supabase.table("saved_quizzes").select("mode").eq("id", quiz_id).single().execute()
-            new_mode = "الوقت الكامل ⏳" if res.data['mode'] == "السرعة ⚡" else "السرعة ⚡"
-            supabase.table("saved_quizzes").update({"mode": new_mode}).eq("id", quiz_id).execute()
-            await c.answer(f"🔄 {new_mode}")
-            c.data = f"quiz_settings_{quiz_id}_{user_id}"
-            return await bot.on_callback_query(c)
+    elif action == "set": # set_c
+        count = data_parts[3]
+        supabase.table("saved_quizzes").update({"questions_count": int(count)}).eq("id", quiz_id).execute()
+        await c.answer(f"📊 تم اختيار {count} سؤال")
 
-        # --- تبديل النطاق (تحديث فوري) ---
-        if c.data.startswith('toggle_scope_'):
-            quiz_id = data_parts[2]
-            res = supabase.table("saved_quizzes").select("quiz_scope").eq("id", quiz_id).single().execute()
-            new_scope = "عام" if res.data.get('quiz_scope') == "خاص" else "خاص"
-            supabase.table("saved_quizzes").update({"quiz_scope": new_scope}).eq("id", quiz_id).execute()
-            await c.answer("🌐 إذاعة عامة" if new_scope == "عام" else "📍 داخل القروب")
-            c.data = f"quiz_settings_{quiz_id}_{user_id}"
-            return await bot.on_callback_query(c)
-            
+    elif action == "toggle" and "hint" in c.data:
+        res = supabase.table("saved_quizzes").select("smart_hint").eq("id", quiz_id).single().execute()
+        new_val = not res.data.get('smart_hint', False)
+        supabase.table("saved_quizzes").update({"smart_hint": new_val}).eq("id", quiz_id).execute()
+        await c.answer("✅ تفعيل" if new_val else "❌ تعطيل")
+
+    elif action == "toggle" and "speed" in c.data:
+        res = supabase.table("saved_quizzes").select("mode").eq("id", quiz_id).single().execute()
+        new_mode = "الوقت الكامل ⏳" if res.data['mode'] == "السرعة ⚡" else "السرعة ⚡"
+        supabase.table("saved_quizzes").update({"mode": new_mode}).eq("id", quiz_id).execute()
+        await c.answer(f"🔄 {new_mode}")
+
+    elif action == "toggle" and "scope" in c.data:
+        res = supabase.table("saved_quizzes").select("quiz_scope").eq("id", quiz_id).single().execute()
+        new_scope = "عام" if res.data.get('quiz_scope') == "خاص" else "خاص"
+        supabase.table("saved_quizzes").update({"quiz_scope": new_scope}).eq("id", quiz_id).execute()
+        await c.answer("🌐 إذاعة عامة" if new_scope == "عام" else "📍 داخل القروب")
+
+    # 🔥 التحديث السحري: إعادة بناء الشاشة والأزرار فوراً بالقيم الجديدة
+    await update_quiz_settings_ui(c, quiz_id, user_id)
+
+# --- [ 3. هاندلر الحفظ النهائي ] ---
+@dp.callback_query_handler(lambda c: c.data.startswith('save_final_'), state="*")
+async def save_and_exit(c: types.CallbackQuery):
+    quiz_id, user_id = c.data.split('_')[2], c.data.split('_')[3]
+    await c.answer("✅ تم حفظ الإعدادات بنجاح!", show_alert=True)
+    # العودة لشاشة الإدارة الرئيسية للمسابقة
+    c.data = f"manage_quiz_{quiz_id}_{user_id}"
+    # تشغيل هاندلر الإدارة (سيقوم بعرض زر "بدء المسابقة")
+    return await bot.on_callback_query(c)
+    
         # --- [ نظام التشغيل المطور ] ---
         if c.data.startswith('run_'):
             await c.answer("🚀 جارٍ بدء المسابقة..")
