@@ -1090,13 +1090,13 @@ async def engine_private_questions(chat_id, quiz_data, owner_name):
     except Exception as e:
         logging.error(f"Private Engine Error: {e}")
 
-# --- [المشغل الموحد للنتائج والقوالب] ---
+# --- [المشغل الموحد للنتائج والقوالب - نسخة الإصلاح النهائي] ---
 async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_type):
     random.shuffle(questions)
     overall_scores = {}
 
     for i, q in enumerate(questions):
-        # تحديد المسميات بذكاء حسب نوع الجدول المختار
+        # 1. تحديد المسميات بذكاء حسب نوع الجدول المختار
         if engine_type == "bot":
             q_text = q.get('question_content') or '⚠️ نص مفقود'
             ans = str(q.get('correct_answer') or "").strip()
@@ -1110,44 +1110,67 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             ans = str(q.get('correct_answer') or q.get('ans') or "").strip()
             cat_name = "قسم خاص 🔒"
 
+        # 2. إعداد حالة السؤال الجديد
         active_quizzes[chat_id] = {
-            "active": True, "ans": ans, "winners": [], 
-            "mode": quiz_data['mode'], "hint_sent": False
+            "active": True, 
+            "ans": ans, 
+            "winners": [], 
+            "mode": quiz_data['mode'], 
+            "hint_sent": False
         }
         
-        # استدعاء قالب الأسئلة
+        # 3. استدعاء قالب الأسئلة
         await send_quiz_question(chat_id, q, i+1, len(questions), {
-            'owner_name': owner_name, 'mode': quiz_data['mode'], 
-            'time_limit': quiz_data['time_limit'], 'cat_name': cat_name
+            'owner_name': owner_name, 
+            'mode': quiz_data['mode'], 
+            'time_limit': quiz_data['time_limit'], 
+            'cat_name': cat_name
         })
         
+        # 4. محرك الوقت والتلميح (تم الإصلاح لمنع التعليق)
         start_time = time.time()
         t_limit = int(quiz_data['time_limit'])
+        
         while time.time() - start_time < t_limit:
-            await asyncio.sleep(0.1)
-            if not active_quizzes[chat_id]['active']: break
+            # التحقق إذا كانت المسابقة ما زالت نشطة (للسماح بالخروج في نظام السرعة)
+            if not active_quizzes.get(chat_id) or not active_quizzes[chat_id]['active']:
+                break
             
-            # استدعاء التلميح الذكي
+            # --- [إصلاح التلميح الذكي] ---
+            # يرسل التلميح إذا مر نصف الوقت بالضبط
             if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
-                if (time.time() - start_time) >= (t_limit / 2):
-                    hint = await generate_smart_hint(ans)
-                    h_msg = await bot.send_message(chat_id, hint, parse_mode="HTML")
-                    active_quizzes[chat_id]['hint_sent'] = True
-                    asyncio.create_task(delete_after(h_msg, 5))
+                elapsed = time.time() - start_time
+                if elapsed >= (t_limit / 2):
+                    try:
+                        hint = await generate_smart_hint(ans)
+                        h_msg = await bot.send_message(chat_id, hint, parse_mode="HTML")
+                        active_quizzes[chat_id]['hint_sent'] = True
+                        # حذف التلميح تلقائياً بعد 5 ثواني للحفاظ على نظافة المحادثة
+                        asyncio.create_task(delete_after(h_msg, 5))
+                    except Exception as e:
+                        logging.error(f"Hint Error: {e}")
 
-        active_quizzes[chat_id]['active'] = False
+            # أهم سطر: يسمح للبوت بمعالجة رسائل الأعضاء وتجنب التعليق
+            await asyncio.sleep(0.5)
+
+        # 5. إنهاء وقت السؤال وتوزيع النقاط
+        if chat_id in active_quizzes:
+            active_quizzes[chat_id]['active'] = False
+        
         for w in active_quizzes[chat_id]['winners']:
             uid = w['id']
-            if uid not in overall_scores: overall_scores[uid] = {"name": w['name'], "points": 0}
+            if uid not in overall_scores: 
+                overall_scores[uid] = {"name": w['name'], "points": 0}
             overall_scores[uid]['points'] += 10
         
-        # استدعاء نتائج السؤال (المبدعين)
+        # 6. استدعاء نتائج السؤال (لوحة المبدعين)
         await send_creative_results(chat_id, ans, active_quizzes[chat_id]['winners'], overall_scores)
+        
+        # فاصل زمني بين الأسئلة
         await asyncio.sleep(2)
 
-    # استدعاء النتائج النهائية
+    # 7. استدعاء النتائج النهائية (لوحة الشرف)
     await send_final_results(chat_id, overall_scores, len(questions))
-
 # ==========================================
 # 4. الجزء الثالث: قالب السؤال والتلميح...........     
 # ==========================================
