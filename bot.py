@@ -549,20 +549,26 @@ async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
     await state.finish()
     await c.answer()
     
-    # حفظ صاحب الجلسة لنظام الأمان
+        # حفظ صاحب الجلسة لنظام الأمان
     await state.update_data(owner_id=c.from_user.id, owner_name=c.from_user.first_name)
     
-    text = "🎉 أهلاً بك! قم بتهيئة المسابقة عن طريق اختيار أحد الخيارات التالية:"
+    text = "🎉 **أهلاً بك!**\nقم بتهيئة المسابقة عن طريق اختيار مصدر الأسئلة:"
     
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
-        InlineKeyboardButton("👥 أقسام الأعضاء (اختر من إبداعات الآخرين)", callback_data="members_setup_step1"),
-        InlineKeyboardButton("👤 أقسامك الخاصة (التي أنشأتها أنت)", callback_data="my_setup_step1"),
+        InlineKeyboardButton("👥 أقسام الأعضاء (إبداعات الآخرين)", callback_data="members_setup_step1"),
+        InlineKeyboardButton("👤 أقسامك الخاصة (مكتبتي)", callback_data="my_setup_step1"),
         InlineKeyboardButton("🤖 أقسام البوت (الرسمية)", callback_data="bot_setup_step1"),
-        InlineKeyboardButton("🔙 رجوع خطوة للخلف", callback_data="start_quiz")
+        # الإصلاح: توجيهه إلى main_menu أو start (حسب مسمى الهاندلر الرئيسي عندك)
+        InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_main_menu")
     )
-    await c.message.edit_text(text, reply_markup=kb)
-
+    
+    try:
+        await c.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    except:
+        pass
+        
+    
 # --- جلب أقسام البوت الرسمية (تعديل ياسر الملك) ---
 @dp.callback_query_handler(lambda c: c.data == 'bot_setup_step1', state="*")
 async def start_bot_selection(c: types.CallbackQuery, state: FSMContext):
