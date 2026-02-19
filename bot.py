@@ -2,20 +2,32 @@ import logging
 import asyncio
 import random
 import time
+import google.generativeai as genai  # أضفنا المكتبة هنا
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
-active_quizzes = {}
 
 # --- البيانات الخاصة بياسر ---
 API_TOKEN = '7948017595:AAGIu30tTiBCNN18bZiwerJGX5Dg-NKNjE4'
 SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubGNidGd6ZHhzYWN3amlwZ2duIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3NDMzMiwiZXhwIjoyMDg2MTUwMzMyfQ.v3SRkONLNlQw5LWhjo03u0fDce3EvWGBpJ02OGg5DEI"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." # اختصرتها هنا للجمالية
 OWNER_USERNAME = "@Ya_79k"
 MY_TELEGRAM_URL = "https://t.me/Ya_79k"
+
+# --- [ إعداد الذكاء الاصطناعي Gemini ] ---
+genai.configure(api_key="AIzaSyAKUz-zkpcVWipm3SBzeV_tXpQ8lG3QjOk")
+ai_model = genai.GenerativeModel('gemini-1.5-flash')
+
+# استكمال تعريف البوت
+bot = Bot(token=API_TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+active_quizzes = {}
 
 # معرف المطور (ياسر) للتحكم بالإدارة والتفعيل
 ADMIN_ID = 7988144062
