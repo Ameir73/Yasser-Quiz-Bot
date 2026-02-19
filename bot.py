@@ -1109,10 +1109,8 @@ async def generate_smart_hint(answer_text):
     """
     
     try:
-        # استخدام ai_model الذي عرفناه في السطر 33
-        loop = asyncio.get_event_loop()
-        # تشغيل طلب الذكاء الاصطناعي في Thread منفصل لضمان عدم تعليق البوت
-        response = ai_model.generate_content(prompt)
+        # الإصلاح: استخدام asyncio.to_thread لانتظار رد Gemini بدون تعليق البوت
+        response = await asyncio.to_thread(ai_model.generate_content, prompt)
         hint = response.text.strip().replace('"', '')
         
         return (
@@ -1122,15 +1120,17 @@ async def generate_smart_hint(answer_text):
         )
     except Exception as e:
         logging.error(f"AI Hint Error: {e}")
-        # تلميح احتياطي في حال انشغال الـ AI
+        # تلميح احتياطي في حال انشغال الـ AI (الذي ظهر معك سابقاً)
         return f"⚡ **تلميح ذكي:** يبدأ بحرف ( {answer_text[0]} ) وينتهي بـ ( {answer_text[-1]} )"
         
 
 # دالة حذف الرسائل المساعدة
 async def delete_after(message, delay):
     await asyncio.sleep(delay)
-    try: await message.delete()
-    except: pass
+    try: 
+        await message.delete()
+    except: 
+        pass
 
 # ==========================================
 # [2] المحرك الموحد (نسخة الإصلاح والتلميح الناري 🔥)
@@ -1180,6 +1180,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                 if (time.time() - start_time) >= (t_limit / 2):
                     try:
+                        # استدعاء دالة التلميح (التي أصبحت تدعم الـ AI بشكل صحيح الآن)
                         hint_text = await generate_smart_hint(ans)
                         h_msg = await bot.send_message(chat_id, hint_text, parse_mode="HTML")
                         active_quizzes[chat_id]['hint_sent'] = True
