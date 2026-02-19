@@ -1019,12 +1019,12 @@ async def handle_settings_actions(c: types.CallbackQuery):
 async def save_and_exit(c: types.CallbackQuery):
     quiz_id, user_id = c.data.split('_')[2], c.data.split('_')[3]
     await c.answer("✅ تم حفظ الإعدادات بنجاح!", show_alert=True)
-    # العودة لشاشة الإدارة الرئيسية للمسابقة
     c.data = f"manage_quiz_{quiz_id}_{user_id}"
-    # تشغيل هاندلر الإدارة (سيقوم بعرض زر "بدء المسابقة")
     return await bot.on_callback_query(c)
-    
-                # --- [ نظام التشغيل المطور ] ---
+
+# --- [ داخل دالة المعالجة الرئيسية ] ---
+    try:
+        # --- [ نظام التشغيل المطور ] ---
         if c.data.startswith('run_'):
             await c.answer("🚀 جارٍ بدء المسابقة..")
             quiz_id = data_parts[1]
@@ -1047,7 +1047,6 @@ async def save_and_exit(c: types.CallbackQuery):
             
             await countdown_timer(c.message, 5)
             
-            # 🚦 التوجيه الصحيح للمحركات
             if quiz_config.get('is_bot_quiz'):
                 await engine_bot_questions(c.message.chat.id, quiz_config, c.from_user.first_name)
             elif quiz_config.get('is_private'):
@@ -1056,7 +1055,6 @@ async def save_and_exit(c: types.CallbackQuery):
                 await engine_user_questions(c.message.chat.id, quiz_config, c.from_user.first_name)
             return
 
-        # --- [ تأكيد الحذف ] ---
         elif c.data.startswith('confirm_del_'):
             quiz_id = data_parts[2]
             kb = InlineKeyboardMarkup(row_width=2).add(
@@ -1066,24 +1064,23 @@ async def save_and_exit(c: types.CallbackQuery):
             await c.message.edit_text("⚠️ **هل أنت متأكد من الحذف نهائياً؟**", reply_markup=kb)
             return
 
-        # --- [ الحذف النهائي ] ---
         elif c.data.startswith('final_del_'):
             quiz_id = data_parts[2]
             supabase.table("saved_quizzes").delete().eq("id", quiz_id).execute()
             await c.answer("🗑️ تم الحذف بنجاح", show_alert=True)
-            # استدعاء دالة عرض القائمة (تأكد أن اسمها show_quizzes)
             try:
                 await show_quizzes(c)
             except:
-                await c.message.edit_text("✅ تم الحذف. ارجع للقائمة الرئيسية.")
+                await c.message.edit_text("✅ تم الحذف بنجاح.")
             return
-
+            
     except Exception as e:
         import logging
         logging.error(f"Error in Secure Logic: {e}")
         try:
             await c.answer("🚨 حدث خطأ أثناء تنفيذ الإجراء", show_alert=True)
         except: pass
+
 
 # ==========================================
 # 3. نظام المحركات الثلاثة المنفصلة (ياسر المطور)
