@@ -1,4 +1,4 @@
-ضimport logging
+import logging
 import asyncio
 import random
 import time
@@ -1090,13 +1090,13 @@ async def engine_private_questions(chat_id, quiz_data, owner_name):
     except Exception as e:
         logging.error(f"Private Engine Error: {e}")
 
-# --- [المشغل الموحد للنتائج والقوالب - نسخة الإصلاح النهائي] ---
+# --- [المشغل الموحد للنتائج والقوالب - نسخة الإصلاح والتلميح الناري 🔥] ---
 async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_type):
     random.shuffle(questions)
     overall_scores = {}
 
     for i, q in enumerate(questions):
-        # 1. تحديد المسميات بذكاء حسب نوع الجدول المختار
+        # 1. تحديد المسميات حسب نوع المحرك
         if engine_type == "bot":
             q_text = q.get('question_content') or '⚠️ نص مفقود'
             ans = str(q.get('correct_answer') or "").strip()
@@ -1105,7 +1105,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             q_text = q.get('question_text') or q.get('question_content') or '⚠️ نص مفقود'
             ans = str(q.get('answer_text') or q.get('correct_answer') or "").strip()
             cat_name = q['categories']['name'] if q.get('categories') else "عام"
-        else:
+        else: # private
             q_text = q.get('question_content') or q.get('text')
             ans = str(q.get('correct_answer') or q.get('ans') or "").strip()
             cat_name = "قسم خاص 🔒"
@@ -1127,7 +1127,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             'cat_name': cat_name
         })
         
-        # 4. محرك الوقت والتلميح (تم الإصلاح لمنع التعليق)
+        # 4. محرك الوقت والتلميح الناري
         start_time = time.time()
         t_limit = int(quiz_data['time_limit'])
         
@@ -1136,21 +1136,21 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             if not active_quizzes.get(chat_id) or not active_quizzes[chat_id]['active']:
                 break
             
-            # --- [إصلاح التلميح الذكي] ---
-            # يرسل التلميح إذا مر نصف الوقت بالضبط
+            # --- [نظام التلميح الناري المتطور] ---
             if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                 elapsed = time.time() - start_time
-                if elapsed >= (t_limit / 2):
+                if elapsed >= (t_limit / 2): # يظهر في منتصف الوقت بالضبط
                     try:
-                        hint = await generate_smart_hint(ans)
-                        h_msg = await bot.send_message(chat_id, hint, parse_mode="HTML")
+                        # استدعاء التلميح الناري (تأكد أن دالة generate_smart_hint موجودة فوق)
+                        hint_text = await generate_smart_hint(ans)
+                        h_msg = await bot.send_message(chat_id, hint_text, parse_mode="HTML", disable_notification=False)
                         active_quizzes[chat_id]['hint_sent'] = True
-                        # حذف التلميح تلقائياً بعد 5 ثواني للحفاظ على نظافة المحادثة
-                        asyncio.create_task(delete_after(h_msg, 5))
+                        # حذف التلميح بعد 7 ثواني (عشان يلحقوا يقرأوه)
+                        asyncio.create_task(delete_after(h_msg, 7))
                     except Exception as e:
-                        logging.error(f"Hint Error: {e}")
+                        logging.error(f"Fire Hint Error: {e}")
 
-            # أهم سطر: يسمح للبوت بمعالجة رسائل الأعضاء وتجنب التعليق
+            # أهم سطر لمنع تعليق البوت واستقبال الإجابات
             await asyncio.sleep(0.5)
 
         # 5. إنهاء وقت السؤال وتوزيع النقاط
@@ -1171,6 +1171,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
 
     # 7. استدعاء النتائج النهائية (لوحة الشرف)
     await send_final_results(chat_id, overall_scores, len(questions))
+    
 # ==========================================
 # 4. الجزء الثالث: قالب السؤال والتلميح...........     
 # ==========================================
@@ -1178,7 +1179,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
 async def countdown_timer(message: types.Message, seconds=5):
     try:
         for i in range(seconds, 0, -1):
-            await message.edit_text(f"🚀 **تجهيز المسابقة...**\n\nستبدأ خلال: {i}")
+            await message.edit_text(f"🚀 تجهيز المسابقة...\n\nستبدأ خلال: {i}")
             await asyncio.sleep(1)
     except Exception as e:
         logging.error(f"Countdown Error: {e}")
