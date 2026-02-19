@@ -335,67 +335,51 @@ async def start_add_question(c: types.CallbackQuery, state: FSMContext):
     cat_id = c.data.split('_')[-1]
     await state.update_data(current_cat_id=cat_id)
     await Form.waiting_for_question.set()
-    # تعديل الرسالة لطلب السؤال
     await c.message.edit_text("❓ **نظام إضافة الأسئلة:**\n\nاكتب الآن السؤال الذي تريد إضافته:")
-    # حفظ ID هذه الرسالة لحذفها لاحقاً
     await state.update_data(last_bot_msg_id=c.message.message_id)
 
 @dp.message_handler(state=Form.waiting_for_question)
 async def process_q_text(message: types.Message, state: FSMContext):
     data = await state.get_data()
     await state.update_data(q_content=message.text)
-    
-    # 1. حذف رسالة المستخدم و رسالة "نظام إضافة الأسئلة"
     try:
         await message.delete()
         await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
     except: pass
-    
     await Form.waiting_for_ans1.set()
-    # 2. إرسال طلب الإجابة الأولى وحفظ ID الرسالة الجديدة
     msg = await message.answer("✅ تم حفظ نص السؤال.\n\nالآن أرسل **الإجابة الصحيحة** الأولى:")
     await state.update_data(last_bot_msg_id=msg.message_id)
 
 @dp.message_handler(state=Form.waiting_for_ans1)
 async def process_first_ans(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    await state.update_data(ans1=message.text)
+    await state.update_data(ans1=message.text, creator_id=str(message.from_user.id))
     
-    # التعديل: البوت سيحذف فقط رسالة الشخص الذي يضيف السؤال
+    # التعديل: البوت لا يحذف رسالة المستخدم هنا لتبقى واضحة للمراجعة
     try:
-        # التأكد أن الشخص الذي أرسل الرسالة هو نفسه من يقوم بالإعداد
-        if str(message.from_user.id) == data.get('creator_id') or message.from_user.id == message.from_user.id:
-            await message.delete()
-            if 'last_bot_msg_id' in data:
-                await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
-    except: 
-        pass
+        if 'last_bot_msg_id' in data:
+            await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
+    except: pass
     
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("✅ نعم، إضافة ثانية", callback_data="add_second_ans"),
         InlineKeyboardButton("❌ لا، إجابة واحدة فقط", callback_data="no_second_ans")
     )
-    msg = await message.answer("هل تريد إضافة إجابة ثانية (بديلة) لهذا السؤال؟", reply_markup=kb)
+    msg = await message.answer(f"✅ تم حفظ الإجابة: ({message.text})\n\nهل تريد إضافة إجابة ثانية (بديلة) لهذا السؤال؟", reply_markup=kb)
     await state.update_data(last_bot_msg_id=msg.message_id)
 
-# --- معالجة اختيار "نعم" ---
 @dp.callback_query_handler(lambda c: c.data == 'add_second_ans', state='*')
 async def add_second_ans_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     await Form.waiting_for_ans2.set()
-    # تعديل الرسالة الحالية لطلب الإجابة الثانية
     await c.message.edit_text("📝 أرسل الآن **الإجابة الثانية** البديلة:")
 
 @dp.message_handler(state=Form.waiting_for_ans2)
 async def process_second_ans(message: types.Message, state: FSMContext):
     data = await state.get_data()
     cat_id = data.get('current_cat_id')
-    
-    # إيقاف الحذف فوراً
     await state.finish()
-    
-    # حفظ في Supabase (تأكد من وجود العمود alternative_answer)
     supabase.table("questions").insert({
         "category_id": cat_id,
         "question_content": data.get('q_content'),
@@ -403,42 +387,29 @@ async def process_second_ans(message: types.Message, state: FSMContext):
         "alternative_answer": message.text,
         "created_by": str(message.from_user.id)
     }).execute()
-    
-    # التعديل: البوت سيحذف فقط رسالة الشخص الذي يضيف السؤال
     try:
-        # التأكد أن الشخص الذي أرسل الرسالة هو نفسه من يقوم بالإعداد
-        if str(message.from_user.id) == data.get('creator_id') or message.from_user.id == message.from_user.id:
-            await message.delete()
-            if 'last_bot_msg_id' in data:
-                await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
-    except: 
-        pass
-    
+        await message.delete()
+        if 'last_bot_msg_id' in data:
+            await bot.delete_message(message.chat.id, data['last_bot_msg_id'])
+    except: pass
     await finalize_msg(message, cat_id)
 
-# --- معالجة اختيار "لا" (تم الإصلاح) ---
 @dp.callback_query_handler(lambda c: c.data == 'no_second_ans', state='*')
 async def finalize_no_second(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     data = await state.get_data()
     cat_id = data.get('current_cat_id')
-    
-    # إيقاف الحالة فوراً ليعمل الزر
     await state.finish()
-    
     supabase.table("questions").insert({
         "category_id": cat_id,
         "question_content": data.get('q_content'),
         "correct_answer": data.get('ans1'),
         "created_by": str(c.from_user.id)
     }).execute()
-    
     try: await c.message.delete()
     except: pass
-    
     await finalize_msg(c.message, cat_id)
 
-# دالة رسالة النجاح النهائية
 async def finalize_msg(msg_obj, cat_id):
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("⚙️ العودة للوحة إعدادات القسم", callback_data=f"manage_questions_{cat_id}"))
