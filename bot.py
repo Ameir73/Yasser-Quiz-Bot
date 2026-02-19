@@ -1069,7 +1069,8 @@ async def engine_bot_questions(chat_id, quiz_data, owner_name):
     except Exception as e:
         logging.error(f"Bot Engine Error: {e}")
 
-# --- [2. محرك أسئلة الأعضاء] ---
+
+        # --- [2. محرك أسئلة الأعضاء] ---
 async def engine_user_questions(chat_id, quiz_data, owner_name):
     try:
         cat_ids = [int(c) for c in quiz_data['cats'] if str(c).isdigit()]
@@ -1111,7 +1112,7 @@ async def generate_smart_hint(answer_text):
         # استخدام ai_model الذي عرفناه في السطر 33
         loop = asyncio.get_event_loop()
         # تشغيل طلب الذكاء الاصطناعي في Thread منفصل لضمان عدم تعليق البوت
-        response = await loop.run_in_executor(None, lambda: ai_model.generate_content(prompt))
+        response = ai_model.generate_content(prompt)
         hint = response.text.strip().replace('"', '')
         
         return (
