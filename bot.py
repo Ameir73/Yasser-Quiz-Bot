@@ -1134,40 +1134,7 @@ async def engine_private_questions(chat_id, quiz_data, owner_name):
     except Exception as e:
         logging.error(f"Private Engine Error: {e}")
 
-# --- [ مصنع التلميحات النارية بالذكاء الاصطناعي ] ---
-async def generate_smart_hint(answer_text):
-    answer_text = str(answer_text).strip()
-    
-    # 1. فلتر الإجابات القصيرة جداً (يدوي سريع)
-    if len(answer_text) <= 3 and " " not in answer_text:
-        return f"💡 **تلميح سريع:** تتكون من {len(answer_text)} حروف، وتبدأ بحرف ( {answer_text[0]} )"
-
-    # 2. إعداد الطلب لمحرك Gemini
-    prompt = f"""
-    أنت مساعد ذكي في بوت مسابقات. الإجابة الصحيحة هي: ({answer_text}).
-    المطلوب: توليد تلميح واحد فقط غامض وذكي يصف الإجابة دون ذكرها أو تلميحات حروفها.
-    الأسلوب: عربي فصيح، مشوق، وقصير (أقل من 15 كلمة).
-    ابدأ مباشرة بـ: يُعرف بـ أو وصف المعنى.
-    """
-    
-    try:
-        # الإصلاح الجذري: استخدام client بدلاً من ai_model وتحديد الموديل بدقة
-        response = await asyncio.to_thread(
-            client.models.generate_content, 
-            model="gemini-1.5-flash", 
-            contents=prompt
-        )
-        hint = response.text.strip().replace('"', '')
-        
-        return (
-            f"🔥 **تلميح ناري للمحترفين:**\n"
-            f"└ {hint}\n\n"
-            f"« فكر جيداً.. الوقت يداهمك! ⏳ »"
-        )
-    except Exception as e:
-        logging.error(f"AI Hint Error: {e}")
-        # تلميح احتياطي في حال حدوث خطأ في الاتصال
-        return f"⚡ **تلميح ذكي:** يبدأ بحرف ( {answer_text[0]} ) وينتهي بـ ( {answer_text[-1]} )"
+# rnswer_text[-1]} )"
 # دالة حذف الرسائل المساعدة
 async def delete_after(message, delay):
     await asyncio.sleep(delay)
