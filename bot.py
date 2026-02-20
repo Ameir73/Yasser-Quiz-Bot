@@ -24,7 +24,7 @@ MY_TELEGRAM_URL = "https://t.me/Ya_79k"
 
 # --- [ 2. إعداد الذكاء الاصطناعي Gemini ] ---
 genai.configure(api_key=GEMINI_KEY)
-ai_model = genai.GenerativeModel(model_name='gemini-1.5-flash')
+ai_model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
 
 # --- [ 3. تعريف المحركات الأساسية ] ---
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
