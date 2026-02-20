@@ -3,7 +3,7 @@ import asyncio
 import random
 import time
 import os
-import httpx
+import httpx # الطريقة الأسرع والأكثر أماناً
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
@@ -11,28 +11,29 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
-# إعداد السجلات لمراقبة الأداء
+# إعداد السجلات
 logging.basicConfig(level=logging.INFO)
 
-# --- [ 1. إعدادات الهوية والاتصال ] ---
+# --- [ 1. إعدادات الهوية والاتصال الآمن ] ---
 API_TOKEN = os.getenv('BOT_TOKEN')
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 
-# رقم الآدمن موحد في سطر واحد لضمان عمل صلاحياتك
+# سحب المفتاح من المتغيرات المشفرة في Render لضمان عدم سرقته
+GEMINI_KEY = os.getenv('GEMINI_API_KEY')
+
 ADMIN_ID = 7988144062
 OWNER_USERNAME = "@Ya_79k"
 
-# --- [ 2. محرك التلميحات الذكي - رابط Gemini 2.0 Flash المباشر ] ---
+# --- [ 2. محرك التلميحات الذكي - الاتصال المشفر ] ---
 async def generate_smart_hint(answer_text):
     answer_text = str(answer_text).strip()
     
-    # التعامل مع الإجابات القصيرة جداً يدوياً لتوفير الوقت
     if len(answer_text) <= 3:
-        return f"💡 **تلميح:** الكلمة قصيرة، تبدأ بحرف ( {answer_text[0]} )"
+        return f"💡 **تلميح:** كلمة قصيرة تبدأ بحرف ( {answer_text[0]} )"
 
-    # الرابط المباشر مع المفتاح الجديد الذي جربته ونجح
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyAcIj3EI4SUN5KnT2Czws-RUZo5MSywWAs"
+    # استخدام المتغير المشفر في الرابط
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
     
     payload = {
         "contents": [{
@@ -49,14 +50,14 @@ async def generate_smart_hint(answer_text):
             
             if 'candidates' in res_data:
                 hint = res_data['candidates'][0]['content']['parts'][0]['text'].strip()
-                return f"🔥 **تلميح ناري للمحترفين:**\n└ {hint}\n\n« فكر جيداً.. الوقت يداهمك! ⏳ »"
+                return f"🔥 **تلميح ناري للمحترفين:**\n└ {hint}"
             else:
                 logging.error(f"Gemini API Error: {res_data}")
-                return f"⚡ **تلميح ذكي:** يبدأ بحرف ( {answer_text[0]} )"
+                return f"⚡ **تلميح:** يبدأ بحرف ( {answer_text[0]} )"
                 
     except Exception as e:
         logging.error(f"AI Connection Error: {e}")
-        return f"💡 **تلميح:** الإجابة تتكون من {len(answer_text)} حروف."
+        return f"💡 **تلميح:** الإجابة مكونة من {len(answer_text)} حروف."
 
 # --- [ 3. تعريف المحركات الأساسية ] ---
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
