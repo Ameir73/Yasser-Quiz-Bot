@@ -1089,7 +1089,51 @@ async def engine_private_questions(chat_id, quiz_data, owner_name):
     except Exception as e:
         logging.error(f"Private Engine Error: {e}")
 
-# rnswer_text[-1]} )"
+# --- [ محرك التلميحات الذكي - Groq ] ---
+async def generate_smart_hint(answer_text):
+    """
+    هذه الدالة ترسل الإجابة لـ Groq وتعود بوصف لغزي ذكي.
+    """
+    answer_text = str(answer_text).strip()
+    
+    # التأكد من وجود المفتاح
+    if not GROQ_API_KEY:
+        logging.error("GROQ_API_KEY is missing!")
+        return f"💡 **تلميح:** الكلمة تبدأ بحرف ( {answer_text[0]} )"
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "llama-3.3-70b-versatile", # الموديل الأسرع والأذكى حالياً
+        "messages": [
+            {
+                "role": "user", 
+                "content": f"أنت خبير ألغاز محترف. الإجابة هي: ({answer_text}). أعطني وصفاً غامضاً وذكياً جداً يصف المعنى دون ذكر اسمها أو أي حرف منها. اجعله قصيراً جداً ومسلياً بالعربي."
+            }
+        ],
+        "temperature": 0.6
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=payload, timeout=10.0)
+            
+            if response.status_code == 200:
+                res_data = response.json()
+                hint = res_data['choices'][0]['message']['content'].strip()
+                return f"🔥 **تلميح ناري للمحترفين:**\n└ {hint}\n\n« فكر جيداً.. الوقت يداهمك! ⏳ »"
+            
+            # حالة فشل الـ API (خطة بديلة)
+            return f"💡 **تلميح:** الكلمة تبدأ بحرف ( {answer_text[0]} ) وتتكون من {len(answer_text)} حروف."
+                
+    except Exception as e:
+        logging.error(f"AI Connection Error: {str(e)}")
+        return f"💡 **تلميح:** الكلمة تبدأ بـ ( {answer_text[0]} )"
+
 # دالة حذف الرسائل المساعدة
 async def delete_after(message, delay):
     await asyncio.sleep(delay)
