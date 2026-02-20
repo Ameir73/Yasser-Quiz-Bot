@@ -2,7 +2,7 @@ import logging
 import asyncio
 import random
 import time
-import os  # مكتبة استدعاء متغيرات النظام
+import os
 import google.generativeai as genai
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -11,8 +11,10 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
-# --- [ 1. إعدادات الهوية والاتصال المشفرة ] ---
-# جلب المفاتيح من متغيرات البيئة (Environment Variables)
+# إعداد السجلات لمراقبة الأخطاء في Render
+logging.basicConfig(level=logging.INFO)
+
+# --- [ 1. إعدادات الهوية والاتصال ] ---
 API_TOKEN = os.getenv('BOT_TOKEN')
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
@@ -24,6 +26,8 @@ MY_TELEGRAM_URL = "https://t.me/Ya_79k"
 
 # --- [ 2. إعداد الذكاء الاصطناعي Gemini ] ---
 genai.configure(api_key=GEMINI_KEY)
+
+# ملاحظة هامة: إذا استمر خطأ 404، جرب تغيير 'gemini-1.5-flash' إلى 'gemini-pro'
 ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- [ 3. تعريف المحركات الأساسية ] ---
