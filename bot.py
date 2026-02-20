@@ -1149,14 +1149,17 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             if not active_quizzes.get(chat_id) or not active_quizzes[chat_id]['active']:
                 break
             
-            # --- نظام إطلاق التلميح عند منتصف الوقت بالضبط ---
+            # --- نظام إطلاق التلميح عند منتصف الوقت بالضبط باستخدام محرك Groq ---
             if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
+                # إذا مرت نصف المدة ولم يتم إرسال تلميح بعد
                 if (time.time() - start_time) >= (t_limit / 2):
                     try:
-                        # استدعاء دالة التلميح (التي أصبحت تدعم الـ AI بشكل صحيح الآن)
+                        # استدعاء دالة التلميح الذكي (التي تستخدم مفتاح GROQ_API_KEY)
                         hint_text = await generate_smart_hint(ans)
+                        
                         h_msg = await bot.send_message(chat_id, hint_text, parse_mode="HTML")
                         active_quizzes[chat_id]['hint_sent'] = True
+                        
                         # حذف التلميح بعد 8 ثواني لضمان نظافة القروب
                         asyncio.create_task(delete_after(h_msg, 8))
                     except Exception as e:
@@ -1166,6 +1169,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
 
         # 5. إنهاء السؤال وحساب النقاط للفائزين
         if chat_id in active_quizzes:
+            # إرسال رسالة انتهاء الوقت أو الإجابة الصحيحة إذا لزم الأمر هنا
             active_quizzes[chat_id]['active'] = False
             
             for w in active_quizzes[chat_id]['winners']:
