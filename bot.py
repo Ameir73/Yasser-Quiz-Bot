@@ -1138,8 +1138,12 @@ async def generate_smart_hint(answer_text):
     """
     
     try:
-        # الإصلاح: استخدام asyncio.to_thread لانتظار رد Gemini بدون تعليق البوت
-        response = await asyncio.to_thread(ai_model.generate_content, prompt)
+        # الإصلاح الجذري: استخدام client بدلاً من ai_model وتحديد الموديل بدقة
+        response = await asyncio.to_thread(
+            client.models.generate_content, 
+            model="gemini-1.5-flash", 
+            contents=prompt
+        )
         hint = response.text.strip().replace('"', '')
         
         return (
@@ -1149,10 +1153,8 @@ async def generate_smart_hint(answer_text):
         )
     except Exception as e:
         logging.error(f"AI Hint Error: {e}")
-        # تلميح احتياطي في حال انشغال الـ AI (الذي ظهر معك سابقاً)
+        # تلميح احتياطي في حال حدوث خطأ في الاتصال
         return f"⚡ **تلميح ذكي:** يبدأ بحرف ( {answer_text[0]} ) وينتهي بـ ( {answer_text[-1]} )"
-        
-
 # دالة حذف الرسائل المساعدة
 async def delete_after(message, delay):
     await asyncio.sleep(delay)
