@@ -44,7 +44,7 @@ async def get_group_status(chat_id):
         logging.error(f"خطأ في فحص حالة المجموعة: {e}")
         return None
         
-# --- [ 2. محرك استدعاء قالب الاجابة والنتائج  ] ---
+# --- [ 2. حرك استدعاء قالب الاجابة  ] ---
 
 async def send_creative_results(chat_id, correct_ans, winners, overall_scores):
     """تصميم ياسر المطور: دمج الفائزين والترتيب في رسالة واحدة"""
@@ -68,6 +68,8 @@ async def send_creative_results(chat_id, correct_ans, winners, overall_scores):
     
     await bot.send_message(chat_id, msg, parse_mode="HTML")
     
+# --- [ 2. محرك استدعاء قالب النتائج  ] ---
+
 async def send_final_results(chat_id, overall_scores, correct_count):
     """تصميم ياسر لرسالة ختام المسابقة"""
     msg =  "━━━━━━━━━━━━━━━━━━━\n"
