@@ -13,63 +13,23 @@ from supabase import create_client, Client
 
 # إعداد السجلات
 logging.basicConfig(level=logging.INFO)
-
-# --- [ 1. إعدادات الهوية والاتصال الآمن ] ---
-API_TOKEN = os.getenv('BOT_TOKEN')
-SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-
-# سحب المفتاح من المتغيرات المشفرة في Render لضمان عدم سرقته
-GEMINI_KEY = os.getenv('GEMINI_API_KEY')
-
+# --- [ 1. إعدادات الهوية والاتصال ] ---
 ADMIN_ID = 7988144062
 OWNER_USERNAME = "@Ya_79k"
 
-# --- [ 2. محرك التلميحات الذكي - النسخة المعتمدة ] ---
-async def generate_smart_hint(answer_text):
-    answer_text = str(answer_text).strip()
-    
-    # جلب المفتاح (تأكد أن الاسم في Render هو GEMINI_API_KEY)
-    gemini_key = os.getenv('GEMINI_API_KEY')
-    
-    if not gemini_key:
-        logging.error("GEMINI_API_KEY is missing!")
-        return f"💡 **تلميح:** تبدأ بحرف ( {answer_text[0]} )"
+# سحب التوكينات من Render (تأكد من وجود GROQ_API_KEY في الإعدادات)
+API_TOKEN = os.getenv('BOT_TOKEN')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 
-    # استخدام رابط Gemini 2.0 Flash المباشر
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
-    
-    payload = {
-        "contents": [{
-            "parts": [{
-                "text": f"أنت مساعد في بوت مسابقات. الإجابة هي: ({answer_text}). أعطني تلميحاً ذكياً وغامضاً يصف المعنى دون ذكر حروف الكلمة. عربي قصير جداً ومسلي."
-            }]
-        }]
-    }
-
-    try:
-        async with httpx.AsyncClient() as httpx_client:
-            response = await httpx_client.post(url, json=payload, timeout=10.0)
-            
-            if response.status_code == 200:
-                res_data = response.json()
-                if 'candidates' in res_data:
-                    hint = res_data['candidates'][0]['content']['parts'][0]['text'].strip()
-                    return f"🔥 **تلميح ناري:**\n└ {hint}"
-            
-            logging.error(f"Gemini API Error: {response.status_code}")
-            return f"💡 **تلميح:** تبدأ بحرف ( {answer_text[0]} ) وينتهي بـ ( {answer_text[-1]} )"
-                
-    except Exception as e:
-        logging.error(f"AI Connection Error: {str(e)}")
-        return f"💡 **تلميح:** الكلمة مكونة من {len(answer_text)} حروف."
-                    
-        
-# --- [ 3. تعريف المحركات الأساسية ] ---
+# تعريف المحركات الأساسية
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# قاموس المسابقات النشطة
 active_quizzes = {}
 
 # --- [ 4. الدوال المساعدة ] ---
@@ -84,11 +44,13 @@ async def get_group_status(chat_id):
         logging.error(f"خطأ في فحص حالة المجموعة: {e}")
         return None
         
+# --- [ 2. محرك استدعاء قالب الاجابة والنتائج  ] ---
+
 async def send_creative_results(chat_id, correct_ans, winners, overall_scores):
     """تصميم ياسر المطور: دمج الفائزين والترتيب في رسالة واحدة"""
     msg =  "━━━━━━━━━━━━━━━━━━━\n"
     msg += f"✅ الإجابة الصحيحة: <b>{correct_ans}</b>\n"
-    msg += "━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n\n"
     
     if winners:
         msg += "━ إجاباتهم صحيحة ✅ ━\n"
