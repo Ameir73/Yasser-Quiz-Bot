@@ -29,36 +29,44 @@ OWNER_USERNAME = "@Ya_79k"
 async def generate_smart_hint(answer_text):
     answer_text = str(answer_text).strip()
     
-    if len(answer_text) <= 3:
-        return f"💡 **تلميح:** كلمة قصيرة تبدأ بحرف ( {answer_text[0]} )"
+    # جلب المفتاح من البيئة المشفرة
+    gemini_key = os.getenv('GEMINI_API_KEY')
+    
+    # التحقق الأولي إذا كان المفتاح موجود أصلاً في إعدادات Render
+    if not gemini_key:
+        return "❌ خطأ تقني: مفتاح GEMINI_API_KEY غير معرف في إعدادات السيرفر (Render)."
 
-    # استخدام المتغير المشفر في الرابط
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
     
     payload = {
         "contents": [{
             "parts": [{
-                "text": f"أنت مساعد ذكي في بوت مسابقات. الإجابة هي: ({answer_text}). أعطني تلميحاً غامضاً يصف المعنى دون ذكر حروف الكلمة. عربي فصيح، مشوق، وقصير جداً."
+                "text": f"أنت مساعد ذكي في بوت مسابقات. الإجابة هي: ({answer_text}). أعطني تلميحاً غامضاً يصف المعنى دون ذكر حروف الكلمة. عربي فصيح، وقصير جداً."
             }]
         }]
     }
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, timeout=12.0)
-            res_data = response.json()
+        async with httpx.AsyncClient() as httpx_client:
+            response = await httpx_client.post(url, json=payload, timeout=15.0)
             
-            if 'candidates' in res_data:
-                hint = res_data['candidates'][0]['content']['parts'][0]['text'].strip()
-                return f"🔥 **تلميح ناري للمحترفين:**\n└ {hint}"
+            # إذا نجح الاتصال
+            if response.status_code == 200:
+                res_data = response.json()
+                if 'candidates' in res_data:
+                    hint = res_data['candidates'][0]['content']['parts'][0]['text'].strip()
+                    return f"🔥 **تلميح ناري للمحترفين:**\n└ {hint}"
+                else:
+                    return "⚠️ استجابة غريبة من الذكاء الاصطناعي، تأكد من سلامة الحساب."
+            
+            # إذا فشل الاتصال (هنا سنعرف السبب من جوجل)
             else:
-                logging.error(f"Gemini API Error: {res_data}")
-                return f"⚡ **تلميح:** يبدأ بحرف ( {answer_text[0]} )"
+                return f"❌ فشل طلب Gemini. كود الخطأ: {response.status_code}\nالتفاصيل: {response.text[:100]}"
                 
     except Exception as e:
-        logging.error(f"AI Connection Error: {e}")
-        return f"💡 **تلميح:** الإجابة مكونة من {len(answer_text)} حروف."
-
+        logging.error(f"AI Connection Error: {str(e)}")
+        return f"🚨 خطأ برمجـي أثناء الاتصال: {str(e)}"
+        
 # --- [ 3. تعريف المحركات الأساسية ] ---
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
 storage = MemoryStorage()
