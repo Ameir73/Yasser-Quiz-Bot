@@ -3,63 +3,64 @@ import asyncio
 import random
 import time
 import os
-# استيراد المكتبة الجديدة كلياً
-from google import genai
+import httpx
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
-# إعداد السجلات
+# إعداد السجلات لمراقبة الأداء
 logging.basicConfig(level=logging.INFO)
 
 # --- [ 1. إعدادات الهوية والاتصال ] ---
 API_TOKEN = os.getenv('BOT_TOKEN')
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-GEMINI_KEY = os.getenv('GEMINI_API_KEY')
 
+# رقم الآدمن موحد في سطر واحد لضمان عمل صلاحياتك
 ADMIN_ID = 7988144062
 OWNER_USERNAME = "@Ya_79k"
 
-# --- [ 2. إعداد الذكاء الاصطناعي Gemini (النسخة الجديدة) ] ---
-# قمنا بتغيير الاسم هنا من ai_model إلى client تماشياً مع المكتبة الجديدة
-client = genai.Client(api_key=GEMINI_KEY)
+# --- [ 2. محرك التلميحات الذكي - رابط Gemini 2.0 Flash المباشر ] ---
+async def generate_smart_hint(answer_text):
+    answer_text = str(answer_text).strip()
+    
+    # التعامل مع الإجابات القصيرة جداً يدوياً لتوفير الوقت
+    if len(answer_text) <= 3:
+        return f"💡 **تلميح:** الكلمة قصيرة، تبدأ بحرف ( {answer_text[0]} )"
 
-async def get_ai_hint(question, answer):
-    """دالة التلميح باستخدام الأسلوب الجديد من جوجل"""
-    prompt = (
-        f"أنت مساعد خبير في المسابقات. السؤال: '{question}' والإجابة هي: '{answer}'. "
-        f"أعطني تلميحاً ذكياً وقصيراً يساعد المتسابق دون ذكر الإجابة نهائياً."
-    )
+    # الرابط المباشر مع المفتاح الجديد الذي جربته ونجح
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyAcIj3EI4SUN5KnT2Czws-RUZo5MSywWAs"
+    
+    payload = {
+        "contents": [{
+            "parts": [{
+                "text": f"أنت مساعد ذكي في بوت مسابقات. الإجابة هي: ({answer_text}). أعطني تلميحاً غامضاً يصف المعنى دون ذكر حروف الكلمة. عربي فصيح، مشوق، وقصير جداً."
+            }]
+        }]
+    }
+
     try:
-        # هنا تم تصحيح الاستدعاء ليستخدم client بدلاً من ai_model
-        response = await asyncio.to_thread(
-            client.models.generate_content, 
-            model="gemini-1.5-flash", 
-            contents=prompt
-        )
-        # استخراج النص من الكائن الجديد
-        if response and response.text:
-            return response.text.strip()
-        else:
-            return "فكر قليلاً، الإجابة قريبة منك! 💡"
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, timeout=12.0)
+            res_data = response.json()
             
+            if 'candidates' in res_data:
+                hint = res_data['candidates'][0]['content']['parts'][0]['text'].strip()
+                return f"🔥 **تلميح ناري للمحترفين:**\n└ {hint}\n\n« فكر جيداً.. الوقت يداهمك! ⏳ »"
+            else:
+                logging.error(f"Gemini API Error: {res_data}")
+                return f"⚡ **تلميح ذكي:** يبدأ بحرف ( {answer_text[0]} )"
+                
     except Exception as e:
-        # إذا حدث خطأ، يطبعه في سجلات Render لنعرف السبب
-        logging.error(f"AI Hint Error: {e}")
-        return "ركز جيداً في نص السؤال! 💡"
+        logging.error(f"AI Connection Error: {e}")
+        return f"💡 **تلميح:** الإجابة تتكون من {len(answer_text)} حروف."
 
 # --- [ 3. تعريف المحركات الأساسية ] ---
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 active_quizzes = {}
-
 
 # --- [ 4. الدوال المساعدة ] ---
 async def get_group_status(chat_id):
