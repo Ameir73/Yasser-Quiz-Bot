@@ -3,9 +3,12 @@ import asyncio
 import random
 import time
 import os
-import httpx
+import httpx # تم استبدال مكتبة google.generativeai بـ httpx للسرعة
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
 # إعداد السجلات لمراقبة الأداء
