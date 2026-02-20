@@ -1,10 +1,10 @@
 import logging
 import asyncio
 import random
-import httpx
 import time
 import os
-import google.generativeai as genai
+# استيراد المكتبة الجديدة كلياً
+from google import genai
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
@@ -12,7 +12,7 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
-# إعداد السجلات لمراقبة الأخطاء في Render
+# إعداد السجلات
 logging.basicConfig(level=logging.INFO)
 
 # --- [ 1. إعدادات الهوية والاتصال ] ---
@@ -23,55 +23,29 @@ GEMINI_KEY = os.getenv('GEMINI_API_KEY')
 
 ADMIN_ID = 7988144062
 OWNER_USERNAME = "@Ya_79k"
-MY_TELEGRAM_URL = "https://t.me/Ya_79k"
 
-# --- [ 2. إعداد الذكاء الاصطناعي Gemini ] ---
-genai.configure(api_key=GEMINI_KEY)
-
-# إعداد الموديل مع خيارات الجيل لضمان التوافق مع النسخ المستقرة
-generation_config = {
-    "temperature": 0.7,
-    "top_p": 0.9,
-    "top_k": 40,
-    "max_output_tokens": 100,
-}
-
-# نستخدم gemini-1.5-flash وإذا فشل ننتقل تلقائياً لـ gemini-pro
-try:
-    ai_model = genai.GenerativeModel(
-        model_name='gemini-1.5-flash',
-        generation_config=generation_config
-    )
-except Exception as e:
-    logging.error(f"⚠️ فشل تحميل Flash، يتم التحويل لـ Pro: {e}")
-    ai_model = genai.GenerativeModel(
-        model_name='gemini-pro',
-        generation_config=generation_config
-    )
+# --- [ 2. إعداد الذكاء الاصطناعي Gemini (النسخة الجديدة) ] ---
+# استخدام Client الجديد يحل مشكلة الـ 404 و v1beta
+client = genai.Client(api_key=GEMINI_KEY)
 
 async def get_ai_hint(question, answer):
-    """دالة استخراج تلميح ذكي يساعد المتسابق دون كشف الإجابة"""
+    """دالة التلميح باستخدام الأسلوب الجديد من جوجل"""
     prompt = (
-        f"أنت مساعد خبير في المسابقات الثقافية.\n"
-        f"السؤال: {question}\n"
-        f"الإجابة الصحيحة هي: {answer}\n"
-        f"المطلوب: أعطني تلميحاً واحداً ذكياً وقصيراً يساعد الشخص على معرفة الإجابة "
-        f"بشرط ألا تذكر أي جزء من حروف الإجابة أو الكلمة نفسها نهائياً."
+        f"أنت مساعد خبير في المسابقات. السؤال: '{question}' والإجابة هي: '{answer}'. "
+        f"أعطني تلميحاً ذكياً وقصيراً يساعد المتسابق دون ذكر الإجابة نهائياً."
     )
-    
     try:
-        # استخدام asyncio.to_thread لضمان عدم توقف البوت أثناء تفكير الذكاء الاصطناعي
-        response = await asyncio.to_thread(ai_model.generate_content, prompt)
-        
-        if response and response.text:
-            return response.text.strip()
-        else:
-            return "ركز قليلاً، الإجابة مرتبطة بمحتوى السؤال! 💡"
-            
+        # تشغيل الطلب بطريقة متوافقة مع المكتبة الحديثة
+        response = await asyncio.to_thread(
+            client.models.generate_content, 
+            model="gemini-1.5-flash", 
+            contents=prompt
+        )
+        return response.text.strip()
     except Exception as e:
-        logging.error(f"❌ AI Hint Error (404/API): {e}")
-        # في حال حدوث خطأ 404، هذا رد بديل ذكي لكي لا يشعر المستخدم بالعطل
-        return "تلميح سريع: الإجابة تتعلق بـ " + answer[0] + "..." if answer else "حاول مجدداً! 💡"
+        logging.error(f"AI Error: {e}")
+        return "ركز جيداً في نص السؤال! 💡"
+
 # --- [ 3. تعريف المحركات الأساسية ] ---
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
 storage = MemoryStorage()
@@ -79,6 +53,7 @@ dp = Dispatcher(bot, storage=storage)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 active_quizzes = {}
+
 
 # --- [ 4. الدوال المساعدة ] ---
 async def get_group_status(chat_id):
