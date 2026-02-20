@@ -25,7 +25,7 @@ ADMIN_ID = 7988144062
 OWNER_USERNAME = "@Ya_79k"
 
 # --- [ 2. إعداد الذكاء الاصطناعي Gemini (النسخة الجديدة) ] ---
-# استخدام Client الجديد يحل مشكلة الـ 404 و v1beta
+# قمنا بتغيير الاسم هنا من ai_model إلى client تماشياً مع المكتبة الجديدة
 client = genai.Client(api_key=GEMINI_KEY)
 
 async def get_ai_hint(question, answer):
@@ -35,15 +35,21 @@ async def get_ai_hint(question, answer):
         f"أعطني تلميحاً ذكياً وقصيراً يساعد المتسابق دون ذكر الإجابة نهائياً."
     )
     try:
-        # تشغيل الطلب بطريقة متوافقة مع المكتبة الحديثة
+        # هنا تم تصحيح الاستدعاء ليستخدم client بدلاً من ai_model
         response = await asyncio.to_thread(
             client.models.generate_content, 
             model="gemini-1.5-flash", 
             contents=prompt
         )
-        return response.text.strip()
+        # استخراج النص من الكائن الجديد
+        if response and response.text:
+            return response.text.strip()
+        else:
+            return "فكر قليلاً، الإجابة قريبة منك! 💡"
+            
     except Exception as e:
-        logging.error(f"AI Error: {e}")
+        # إذا حدث خطأ، يطبعه في سجلات Render لنعرف السبب
+        logging.error(f"AI Hint Error: {e}")
         return "ركز جيداً في نص السؤال! 💡"
 
 # --- [ 3. تعريف المحركات الأساسية ] ---
