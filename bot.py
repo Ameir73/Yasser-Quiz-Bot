@@ -1307,36 +1307,50 @@ class AdminStates(StatesGroup):
     waiting_for_broadcast = State()
 
 # =========================================
-#          👑 لوحة تحكم ياسر (بكلمة السر) 👑
+#          👑 لوحة تحكم ياسر (المحسنة) 👑
 # =========================================
 
-@dp.message_handler(lambda message: message.text == "ياسر", user_id=ADMIN_ID)
-async def admin_dashboard(message: types.Message):
-    # جلب الإحصائيات من Supabase
-    res = supabase.table("allowed_groups").select("*").execute()
-    groups = res.data
-    active = len([g for g in groups if g['status'] == 'active'])
-    pending = len([g for g in groups if g['status'] == 'pending'])
-    blocked = len([g for g in groups if g['status'] == 'blocked'])
+# نستخدم lambda مع strip() لضمان تجاهل المسافات الزائدة
+@dp.message_handler(lambda message: message.text and message.text.strip() == "ياسر", user_id=ADMIN_ID, state="*")
+async def admin_dashboard(message: types.Message, state: FSMContext):
+    # 1. حذف كلمة "ياسر" فوراً لضمان عدم رؤيتها من قبل الآخرين
+    try:
+        await message.delete()
+    except:
+        pass
 
-    txt = (
-        "👑 <b>أهلاً بك يا مطور (ياسر) في غرفة العمليات</b>\n\n"
-        f"✅ النشطة: {active} | ⏳ المعلقة: {pending} | 🚫 المحظورة: {blocked}\n"
-        "━━━━━━━━━━━━━━\n"
-        "🚀 <b>خيارات التحكم بالنظام:</b>"
-    )
+    # 2. إنهاء أي حالة (State) قديمة لضمان فتح اللوحة بنظافة
+    await state.finish()
+
+    try:
+        # جلب الإحصائيات من Supabase
+        res = supabase.table("allowed_groups").select("*").execute()
+        groups = res.data
+        active = len([g for g in groups if g['status'] == 'active'])
+        pending = len([g for g in groups if g['status'] == 'pending'])
+        blocked = len([g for g in groups if g['status'] == 'blocked'])
+
+        txt = (
+            "👑 <b>أهلاً بك يا مطور (ياسر) في غرفة العمليات</b>\n\n"
+            f"✅ النشطة: {active} | ⏳ المعلقة: {pending} | 🚫 المحظورة: {blocked}\n"
+            "━━━━━━━━━━━━━━\n"
+            "🚀 <b>خيارات التحكم بالنظام:</b>"
+        )
+        
+        kb = InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            InlineKeyboardButton("📊 إدارة الأسئلة", callback_data="botq_main"),
+            InlineKeyboardButton("📝 مراجعة الطلبات", callback_data="admin_view_pending"),
+            InlineKeyboardButton("📢 إذاعة عامة", callback_data="admin_broadcast"),
+            InlineKeyboardButton("🔄 تحديث النظام", callback_data="admin_restart_now")
+        )
+        kb.row(InlineKeyboardButton("🔑 استبدال توكين البوت (خطر)", callback_data="admin_change_token"))
+        kb.row(InlineKeyboardButton("❌ إغلاق اللوحة", callback_data="botq_close"))
+        
+        await message.answer(txt, reply_markup=kb, parse_mode="HTML")
     
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("📊 إدارة الأسئلة", callback_data="botq_main"),
-        InlineKeyboardButton("📝 مراجعة الطلبات", callback_data="admin_view_pending"),
-        InlineKeyboardButton("📢 إذاعة عامة", callback_data="admin_broadcast"),
-        InlineKeyboardButton("🔄 تحديث النظام", callback_data="admin_restart_now")
-    )
-    kb.row(InlineKeyboardButton("🔑 استبدال توكين البوت (خطر)", callback_data="admin_change_token"))
-    kb.row(InlineKeyboardButton("❌ إغلاق اللوحة", callback_data="botq_close"))
-    
-    await message.answer(txt, reply_markup=kb, parse_mode="HTML")
+    except Exception as e:
+        await message.answer(f"❌ خطأ في جلب البيانات: {str(e)}")
 
 # --- معالج زر تحديث النظام / إعادة التشغيل ---
 @dp.callback_query_handler(text="admin_restart_now", user_id=ADMIN_ID)
