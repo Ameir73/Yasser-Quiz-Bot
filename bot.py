@@ -1523,24 +1523,34 @@ async def process_auth_callback(c: types.CallbackQuery):
         await c.answer("تم الحظر ❌")
     
 # ==========================================
-# 5. نهاية الملف: هل تحبني ضمان التشغيل 24/7 على Render
+# 5. نهاية الملف: ضمان التشغيل 24/7 (Keep-Alive)
 # ==========================================
 from aiohttp import web
 
+# دالة الرد على "نغزة" المواقع الخارجية مثل Cron-job
 async def handle_ping(request):
-    return web.Response(text="Bot is Active!")
+    return web.Response(text="Bot is Active and Running! 🚀")
 
 if __name__ == '__main__':
-    # إعداد سيرفر صغير للرد على Cron-job لضمان استمرار البوت
+    # 1. إعداد سيرفر ويب صغير في الخلفية للرد على طلبات الـ HTTP
     app = web.Application()
     app.router.add_get('/', handle_ping)
+    
     loop = asyncio.get_event_loop()
     runner = web.AppRunner(app)
     loop.run_until_complete(runner.setup())
-    # بورت 10000 المتوافق مع Render
-    site = web.TCPSite(runner, '0.0.0.0', 10000)
+    
+    # 2. تحديد المنفذ (Port): Render يستخدم غالباً 10000، و Koyeb يستخدم ما يحدده النظام
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    
+    # تشغيل السيرفر كـ "مهمة" جانبية حتى لا يعطل البوت
     loop.create_task(site.start())
+    print(f"✅ Keep-alive server started on port {port}")
 
+    # 3. إعدادات السجلات والتشغيل النهائي للبوت
     logging.basicConfig(level=logging.INFO)
-    bot.parse_mode = "HTML" 
+    
+    # بدء استقبال الرسائل (Polling) مع تخطي التحديثات القديمة
     executor.start_polling(dp, skip_updates=True)
+    
