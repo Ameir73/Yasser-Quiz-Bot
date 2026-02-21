@@ -1309,25 +1309,8 @@ class AdminStates(StatesGroup):
 #          👑 غرفة عمليات المطور 👑
 # =========================================
 
-# --- 1. معالج كلمة السر "ياسر" (اللوحة الكاملة مع التحديث والتوكين) ---
-@dp.message_handler(lambda message: message.text and message.text.strip() == "ياسر", user_id=ADMIN_ID, state="*")
-async def yasser_dashboard(message: types.Message, state: FSMContext):
-    await state.finish()
-    try: await message.delete() # حذف كلمة السر للخصوصية
-    except: pass
-
-    res = supabase.table("allowed_groups").select("*").execute()
-    groups = res.data
-    active = len([g for g in groups if g['status'] == 'active'])
-    pending = len([g for g in groups if g['status'] == 'pending'])
-    
-    txt = (
-        "👑 <b>أهلاً بك يا مطور (ياسر)</b>\n"
-        "━━━━━━━━━━━━━━\n"
-        f"✅ النشطة: {active} | ⏳ المعلقة: {pending}\n"
-        "━━━━━━━━━━━━━━\n"
-        "🚀 <b>خيارات التحكم المتقدمة:</b>"
-    )
+# دالة موحدة لتوليد لوحة الأزرار المحدثة (لضمان ظهورها في كل الحالات)
+def get_main_admin_kb():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("📊 إدارة الأسئلة", callback_data="botq_main"),
@@ -1337,56 +1320,48 @@ async def yasser_dashboard(message: types.Message, state: FSMContext):
     )
     kb.row(InlineKeyboardButton("🔑 استبدال توكين البوت", callback_data="admin_change_token"))
     kb.row(InlineKeyboardButton("❌ إغلاق اللوحة", callback_data="botq_close"))
-    await message.answer(txt, reply_markup=kb, parse_mode="HTML")
+    return kb
 
-# --- 2. معالج أمر /admin التقليدي ---
+# --- 1. معالج الأمر الرئيسي /admin ---
 @dp.message_handler(commands=['admin'], user_id=ADMIN_ID)
 async def admin_dashboard(message: types.Message):
-    res = supabase.table("allowed_groups").select("*").execute()
-    groups = res.data
-    active = len([g for g in groups if g['status'] == 'active'])
-    pending = len([g for g in groups if g['status'] == 'pending'])
-    blocked = len([g for g in groups if g['status'] == 'blocked'])
+    try:
+        res = supabase.table("allowed_groups").select("*").execute()
+        active = len([g for g in res.data if g['status'] == 'active'])
+        pending = len([g for g in res.data if g['status'] == 'pending'])
+        
+        txt = (
+            "👑 <b>غرفة العمليات الرئيسية</b>\n"
+            "━━━━━━━━━━━━━━\n"
+            f"✅ النشطة: {active} | ⏳ المعلقة: {pending}\n"
+            "━━━━━━━━━━━━━━\n"
+            "👇 اختر قسماً لإدارته:"
+        )
+        # هنا استدعاء اللوحة المحدثة فوراً
+        await message.answer(txt, reply_markup=get_main_admin_kb(), parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"Admin Panel Error: {e}")
 
-    txt = (
-        "👑 <b>أهلاً بك يا مطور في غرفة العمليات</b>\n\n"
-        f"✅ النشطة: {active} | ⏳ المعلقة: {pending} | 🚫 المحظورة: {blocked}\n"
-        "👇 اختر قسماً لإدارته:"
-    )
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(
-        InlineKeyboardButton("📊 إدارة أسئلة البوت", callback_data="botq_main"),
-        InlineKeyboardButton("📝 مراجعة الطلبات المعلقة", callback_data="admin_view_pending"),
-        InlineKeyboardButton("📢 إذاعة (نشر عام)", callback_data="admin_broadcast"),
-        InlineKeyboardButton("❌ إغلاق", callback_data="botq_close")
-    )
-    await message.answer(txt, reply_markup=kb, parse_mode="HTML")
-
-# --- 3. معالج العودة للرئيسية (موحد) ---
+# --- 2. معالج العودة للقائمة الرئيسية ---
 @dp.callback_query_handler(lambda c: c.data == "admin_back", user_id=ADMIN_ID, state="*")
 async def admin_back_to_main(c: types.CallbackQuery, state: FSMContext):
     await state.finish()
-    res = supabase.table("allowed_groups").select("*").execute()
-    active = len([g for g in res.data if g['status'] == 'active'])
-    pending = len([g for g in res.data if g['status'] == 'pending'])
-    
-    txt = (
-        "👑 <b>غرفة العمليات الرئيسية</b>\n\n"
-        f"✅ النشطة: {active} | ⏳ المعلقة: {pending}"
-    )
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("📊 إدارة الأسئلة", callback_data="botq_main"),
-        InlineKeyboardButton("📝 مراجعة الطلبات", callback_data="admin_view_pending"),
-        InlineKeyboardButton("📢 إذاعة عامة", callback_data="admin_broadcast"),
-        InlineKeyboardButton("🔄 تحديث النظام", callback_data="admin_restart_now")
-    )
-    kb.row(InlineKeyboardButton("🔑 استبدال التوكين", callback_data="admin_change_token"))
-    kb.row(InlineKeyboardButton("❌ إغلاق", callback_data="botq_close"))
-    await c.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
+    try:
+        res = supabase.table("allowed_groups").select("*").execute()
+        active = len([g for g in res.data if g['status'] == 'active'])
+        pending = len([g for g in res.data if g['status'] == 'pending'])
+        
+        txt = (
+            "👑 <b>غرفة العمليات الرئيسية</b>\n"
+            "━━━━━━━━━━━━━━\n"
+            f"✅ النشطة: {active} | ⏳ المعلقة: {pending}\n"
+            "━━━━━━━━━━━━━━"
+        )
+        await c.message.edit_text(txt, reply_markup=get_main_admin_kb(), parse_mode="HTML")
+    except Exception as e:
+        await c.answer("⚠️ حدث خطأ أثناء التحديث")
 
-# --- 4. معالجات الأزرار الجديدة (تحديث و توكين) ---
-
+# --- 3. معالج زر التحديث (Restart) ---
 @dp.callback_query_handler(text="admin_restart_now", user_id=ADMIN_ID)
 async def system_restart(c: types.CallbackQuery):
     await c.message.edit_text("🔄 <b>جاري تحديث النظام وإعادة التشغيل...</b>", parse_mode="HTML")
@@ -1394,12 +1369,15 @@ async def system_restart(c: types.CallbackQuery):
     await storage.close()
     os._exit(0)
 
+# --- 4. معالج زر استبدال التوكين ---
 @dp.callback_query_handler(text="admin_change_token", user_id=ADMIN_ID)
 async def ask_new_token(c: types.CallbackQuery):
-    await c.message.edit_text("📝 <b>أرسل التوكين الجديد الآن:</b>", 
-                             reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ تراجع", callback_data="admin_back")))
+    await c.message.edit_text(
+        "📝 <b>أرسل التوكين الجديد الآن:</b>\n"
+        "⚠️ سيتم الحفظ في Supabase وإعادة التشغيل فوراً.", 
+        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ تراجع", callback_data="admin_back"))
+    )
     await AdminStates.waiting_for_new_token.set()
-
 # --- [ إدارة أسئلة البوت الرسمية - النسخة المصححة لياسر ] ---
 
 @dp.callback_query_handler(lambda c: c.data.startswith('botq_'), user_id=ADMIN_ID)
